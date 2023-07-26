@@ -28,7 +28,7 @@
         "WorkflowExpireDateTime": null,
         "IsLoginRequired": false,
         "CreatedDateTime": "2023-07-25T21:50:44.573",
-        "ModifiedDateTime": "2023-07-25T22:06:43.073"
+        "ModifiedDateTime": "2023-07-25T23:05:18.12"
       },
       "Transforms": {},
       "References": [
@@ -972,7 +972,7 @@
         "IsPublic": false,
         "ShowOnBulk": false,
         "CreatedDateTime": null,
-        "ModifiedDateTime": "2023-07-25T22:06:43.12"
+        "ModifiedDateTime": "2023-07-25T23:05:18.243"
       },
       "Transforms": {},
       "References": [
@@ -1151,7 +1151,7 @@
         "IsPublic": false,
         "ShowOnBulk": false,
         "CreatedDateTime": null,
-        "ModifiedDateTime": "2023-07-25T22:06:43.133"
+        "ModifiedDateTime": "2023-07-25T23:05:18.277"
       },
       "Transforms": {},
       "References": [
@@ -1311,7 +1311,7 @@
         "IsPublic": false,
         "ShowOnBulk": false,
         "CreatedDateTime": null,
-        "ModifiedDateTime": "2023-07-25T22:06:43.383"
+        "ModifiedDateTime": "2023-07-25T23:05:18.493"
       },
       "Transforms": {},
       "References": [
@@ -1471,7 +1471,7 @@
         "IsPublic": false,
         "ShowOnBulk": false,
         "CreatedDateTime": null,
-        "ModifiedDateTime": "2023-07-25T22:06:43.527"
+        "ModifiedDateTime": "2023-07-25T23:05:18.62"
       },
       "Transforms": {},
       "References": [
@@ -1631,7 +1631,7 @@
         "IsPublic": false,
         "ShowOnBulk": false,
         "CreatedDateTime": null,
-        "ModifiedDateTime": "2023-07-25T22:06:43.277"
+        "ModifiedDateTime": "2023-07-25T23:05:18.387"
       },
       "Transforms": {},
       "References": [
@@ -2096,17 +2096,17 @@
       "GenerateNewGuid": true,
       "Properties": {
         "IsSystem": false,
-        "Value": "{%- assign token = 'REPLACE THIS WITH API TOKEN' -%}\n{%- assign style = Workflow | Attribute:'Style','RawValue' -%}\n{% capture output %}{\n  \"cfg_scale\": 7,\n  \"clip_guidance_preset\": \"FAST_BLUE\",\n  \"height\": {{ Workflow | Attribute:'AspectRatio','RawValue' | Split:'x' | Last }},\n  \"width\": {{ Workflow | Attribute:'AspectRatio','RawValue' | Split:'x' | First }},\n  \"samples\": {{ Workflow | Attribute:'Samples' }},\n  \"steps\": 75,\n  {% if style != null and style != empty%}\"style_preset\": \"{{ style }}\",{% endif %}\n  \"text_prompts\": [\n    {\n      \"text\": \"{{ Workflow | Attribute:'Prompt' }}\",\n      \"weight\": 1\n    }\n  ]\n}{% endcapture %}\n{%- assign bodyoutput = output | Trim | StripNewLines -%}\n{%- webrequest url:'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v0-9/text-to-image' body:'{{bodyoutput}}'  headers:'Authorization^Bearer {{token}}|Accept^application/json' method:'POST' requestcontenttype:'application/json' timeout:'120000'  -%}\n   {{- results | ToJSON -}}\n{%- endwebrequest -%}    ",
-        "PersistedTextValue": "{%- assign token = 'REPLACE THIS WITH API TOKEN' -%}\n{%- assign style = Workflow | Attribute:'Style','RawValue' -%}\n{% capture output %}{\n  \"cfg_scale\": 7,\n  \"clip_guidance_preset\": \"FAST_BLUE\",\n  \"height\": {{ Workflow | Attribute:'AspectRatio','RawValue' | Split:'x' | Last }},\n  \"width\": {{ Workflow | Attribute:'AspectRatio','RawValue' | Split:'x' | First }},\n  \"samples\": {{ Workflow | Attribute:'Samples' }},\n  \"steps\": 75,\n  {% if style != null and style != empty%}\"style_preset\": \"{{ style }}\",{% endif %}\n  \"text_prompts\": [\n    {\n      \"text\": \"{{ Workflow | Attribute:'Prompt' }}\",\n      \"weight\": 1\n    }\n  ]\n}{% endcapture %}\n{%- assign bodyoutput = output | Trim | StripNewLines -%}\n{%- webrequest url:'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v0-9/text-to-image' body:'{{bodyoutput}}'  headers:'Authorization^Bearer {{token}}|Accept^application/json' method:'POST' requestcontenttype:'application/json' timeout:'120000'  -%}\n   {{- results | ToJSON -}}\n{%- endwebrequest -%}    ",
-        "PersistedHtmlValue": "{%- assign token = &#39;REPLACE THIS WITH API TOKEN&#39; -%}\n{%- assign style = Workflow | Attribute:&#39;Style&#39;,&#39;RawValue&#39; -%}\n{% capture output %}{\n  &quot;cfg_scale&quot;: 7,\n  &quot;clip_guidance_preset&quot;: &quot;FAST_BLUE&quot;,\n  &quot;height&quot;: {{ Workflow | Attribute:&#39;AspectRatio&#39;,&#39;RawValue&#39; | Split:&#39;x&#39; | Last }},\n  &quot;width&quot;: {{ Workflow | Attribute:&#39;AspectRatio&#39;,&#39;RawValue&#39; | Split:&#39;x&#39; | First }},\n  &quot;samples&quot;: {{ Workflow | Attribute:&#39;Samples&#39; }},\n  &quot;steps&quot;: 75,\n  {% if style != null and style != empty%}&quot;style_preset&quot;: &quot;{{ style }}&quot;,{% endif %}\n  &quot;text_prompts&quot;: [\n    {\n      &quot;text&quot;: &quot;{{ Workflow | Attribute:&#39;Prompt&#39; }}&quot;,\n      &quot;weight&quot;: 1\n    }\n  ]\n}{% endcapture %}\n{%- assign bodyoutput = output | Trim | StripNewLines -%}\n{%- webrequest url:&#39;https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v0-9/text-to-image&#39; body:&#39;{{bodyoutput}}&#39;  headers:&#39;Authorization^Bearer {{token}}|Accept^application/json&#39; method:&#39;POST&#39; requestcontenttype:&#39;application/json&#39; timeout:&#39;120000&#39;  -%}\n   {{- results | ToJSON -}}\n{%- endwebrequest -%}    ",
-        "PersistedCondensedTextValue": "{%- assign token = 'REPLACE THIS WITH API TOKEN' -%}\n{%- assign style = Workflow |...",
-        "PersistedCondensedHtmlValue": "{%- assign token = &#39;REPLACE THIS WITH API TOKEN&#39; -%}\n{%- assign style = Workflow |...",
+        "Value": "{%- assign key = 'PLACEAPIKEYHERE' -%}\n{%- assign style = Workflow | Attribute:'Style','RawValue' -%}\n{% capture output %}{\n  \"cfg_scale\": 7,\n  \"clip_guidance_preset\": \"FAST_BLUE\",\n  \"height\": {{ Workflow | Attribute:'AspectRatio','RawValue' | Split:'x' | Last }},\n  \"width\": {{ Workflow | Attribute:'AspectRatio','RawValue' | Split:'x' | First }},\n  \"samples\": {{ Workflow | Attribute:'Samples' }},\n  \"steps\": 75,\n  {% if style != null and style != empty%}\"style_preset\": \"{{ style }}\",{% endif %}\n  \"text_prompts\": [\n    {\n      \"text\": \"{{ Workflow | Attribute:'Prompt' }}\",\n      \"weight\": 1\n    }\n  ]\n}{% endcapture %}\n{%- assign bodyoutput = output | Trim | StripNewLines -%}\n{%- webrequest url:'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v0-9/text-to-image' body:'{{bodyoutput}}'  headers:'Authorization^Bearer {{key}}|Accept^application/json' method:'POST' requestcontenttype:'application/json' timeout:'120000'  -%}\n   {{- results | ToJSON -}}\n{%- endwebrequest -%}    ",
+        "PersistedTextValue": "{%- assign key = 'PLACEAPIKEYHERE' -%}\n{%- assign style = Workflow | Attribute:'Style','RawValue' -%}\n{% capture output %}{\n  \"cfg_scale\": 7,\n  \"clip_guidance_preset\": \"FAST_BLUE\",\n  \"height\": {{ Workflow | Attribute:'AspectRatio','RawValue' | Split:'x' | Last }},\n  \"width\": {{ Workflow | Attribute:'AspectRatio','RawValue' | Split:'x' | First }},\n  \"samples\": {{ Workflow | Attribute:'Samples' }},\n  \"steps\": 75,\n  {% if style != null and style != empty%}\"style_preset\": \"{{ style }}\",{% endif %}\n  \"text_prompts\": [\n    {\n      \"text\": \"{{ Workflow | Attribute:'Prompt' }}\",\n      \"weight\": 1\n    }\n  ]\n}{% endcapture %}\n{%- assign bodyoutput = output | Trim | StripNewLines -%}\n{%- webrequest url:'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v0-9/text-to-image' body:'{{bodyoutput}}'  headers:'Authorization^Bearer {{key}}|Accept^application/json' method:'POST' requestcontenttype:'application/json' timeout:'120000'  -%}\n   {{- results | ToJSON -}}\n{%- endwebrequest -%}    ",
+        "PersistedHtmlValue": "{%- assign key = &#39;PLACEAPIKEYHERE&#39; -%}\n{%- assign style = Workflow | Attribute:&#39;Style&#39;,&#39;RawValue&#39; -%}\n{% capture output %}{\n  &quot;cfg_scale&quot;: 7,\n  &quot;clip_guidance_preset&quot;: &quot;FAST_BLUE&quot;,\n  &quot;height&quot;: {{ Workflow | Attribute:&#39;AspectRatio&#39;,&#39;RawValue&#39; | Split:&#39;x&#39; | Last }},\n  &quot;width&quot;: {{ Workflow | Attribute:&#39;AspectRatio&#39;,&#39;RawValue&#39; | Split:&#39;x&#39; | First }},\n  &quot;samples&quot;: {{ Workflow | Attribute:&#39;Samples&#39; }},\n  &quot;steps&quot;: 75,\n  {% if style != null and style != empty%}&quot;style_preset&quot;: &quot;{{ style }}&quot;,{% endif %}\n  &quot;text_prompts&quot;: [\n    {\n      &quot;text&quot;: &quot;{{ Workflow | Attribute:&#39;Prompt&#39; }}&quot;,\n      &quot;weight&quot;: 1\n    }\n  ]\n}{% endcapture %}\n{%- assign bodyoutput = output | Trim | StripNewLines -%}\n{%- webrequest url:&#39;https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v0-9/text-to-image&#39; body:&#39;{{bodyoutput}}&#39;  headers:&#39;Authorization^Bearer {{key}}|Accept^application/json&#39; method:&#39;POST&#39; requestcontenttype:&#39;application/json&#39; timeout:&#39;120000&#39;  -%}\n   {{- results | ToJSON -}}\n{%- endwebrequest -%}    ",
+        "PersistedCondensedTextValue": "{%- assign key = 'PLACEAPIKEYHERE' -%}\n{%- assign style = Workflow |...",
+        "PersistedCondensedHtmlValue": "{%- assign key = &#39;PLACEAPIKEYHERE&#39; -%}\n{%- assign style = Workflow |...",
         "IsPersistedValueDirty": false,
         "ValueAsDateTime": null,
         "ValueAsNumeric": null,
         "ValueAsBoolean": null,
         "CreatedDateTime": "2023-07-25T21:50:45.62",
-        "ModifiedDateTime": "2023-07-25T22:06:43.683"
+        "ModifiedDateTime": "2023-07-25T23:05:18.76"
       },
       "Transforms": {},
       "References": [
