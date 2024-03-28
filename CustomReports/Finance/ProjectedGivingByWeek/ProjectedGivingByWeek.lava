@@ -1,0 +1,397 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.1/Chart.bundle.min.js"> </script>
+<style>
+
+.year {
+    text-align:center;
+}
+
+.yeartables >div:nth-child(-n+2) {
+       margin-right:12.5%;
+       padding-right: 20px;
+    }
+
+.yeartables tr:nth-child(even) { background:#CCC; }
+
+</style>
+
+{% assign 5yearsback = 'Now' | DateAdd:-5,'y' | Date:'yyyy' %}
+{% assign 4yearsback = 'Now' | DateAdd:-4,'y' | Date:'yyyy' %}
+{% assign 3yearsback = 'Now' | DateAdd:-3,'y' | Date:'yyyy' %}
+{% assign 2yearsback = 'Now' | DateAdd:-2,'y' | Date:'yyyy' %}
+{% assign 1yearback = 'Now' | DateAdd:-1,'y' | Date:'yyyy' %}
+{% assign currentyear = 'Now' | Date:'yyyy' %}
+{% assign rowcount = 0 %}
+{% assign CurrentTotal = 0 %}
+{% assign currentPercentTotal = 0 %}
+{% assign currentmonth = 'Now' | Date:'M'%}
+{% assign TotalYear[] = 0 %}
+{% assign WeekCurrent[0] = 0 %}
+{% assign TotalCurrent = 0 %}
+{% assign TotalYear1 = 0 %}
+{% assign TotalYear2 = 0 %}
+{% assign TotalYear3 = 0 %}
+{% assign TotalYear4 = 0 %}
+{% assign TotalYear5 = 0 %}
+{% assign Total5Year = 0 %}
+{% assign totalpercent = totalpercent | BBM_AddToArray:0 %}
+
+{% for row in table1.rows %}
+    {% if row.Year == currentyear %}
+        {% assign TotalCurrent = TotalCurrent | Plus:row.WeekAmount %}
+    {% elseif row.Year == 5yearsback %}
+        {% assign TotalYear5 = TotalYear5 | Plus:row.WeekAmount %}
+    {% elseif row.Year == 4yearsback %}
+        {% assign TotalYear4 = TotalYear4 | Plus:row.WeekAmount %}
+    {% elseif row.Year == 3yearsback %}
+        {% assign TotalYear3 = TotalYear3 | Plus:row.WeekAmount %}
+    {% elseif row.Year == 2yearsback %}
+        {% assign TotalYear2 = TotalYear2 | Plus:row.WeekAmount %}
+    {% elseif row.Year == 1yearback %}
+        {% assign TotalYear1 = TotalYear1 | Plus:row.WeekAmount %}
+    {% endif %}
+    {% if row.Year != 'Total' and row.Year != currentyear %}
+        {% assign Total5Year = Total5Year | Plus:row.WeekAmount %}
+    {% endif %}
+
+{% endfor %}
+{% assign RowYear = 5yearsback %}
+{% assign RowWeek = 0 %}
+<div class="row" style="margin-bottom:50px;">
+    <div class="col-md-2">
+        <table class="yeartables" style="width:100%">
+            <thead>
+                <tr>
+                    <th class="year" colspan="3"> {{5yearsback}}</th>
+                </tr>
+                <tr>
+                <tr>
+                    <th  class="text-right">Week</th>
+                    <th  class="text-right">Total Given</th>
+                    <th  class="text-right">% Total</th>
+                </tr>
+            </thead>
+            <tbody>
+{% for row in table1.rows %}
+    {% if RowYear != row.Year and row.Year != currentyear %}
+        {% if rowcount < 53 %}
+        <tr><td>&nbsp;</td><td></td></tr>
+        {% endif %}
+                </tbody>
+            <tfoot>
+                <tr>
+                    {% if RowYear == 5yearsback %}
+                    <th class="text-right">Total:</th>
+                    <th class="text-right"> {{TotalYear5 | FormatAsCurrency}}</th>
+                    <th class="text-right"> {{TotalYear5 | DividedBy:TotalYear5,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}</th>
+                    {% elseif RowYear == 4yearsback %}
+                    <th class="text-right"> {{TotalYear4 | FormatAsCurrency}}</th>
+                    <th class="text-right"> {{TotalYear4 | DividedBy:TotalYear4,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}</th>
+                    {% elseif RowYear == 3yearsback %}
+                    <th class="text-right"> {{TotalYear3 | FormatAsCurrency}}</th>
+                    <th class="text-right"> {{TotalYear3 | DividedBy:TotalYear3,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}</th>
+                    {% elseif RowYear == 2yearsback %}
+                    <th class="text-right"> {{TotalYear2 | FormatAsCurrency}}</th>
+                    <th class="text-right"> {{TotalYear2 | DividedBy:TotalYear2,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}</th>
+                    {% elseif RowYear == 1yearback %}
+                    <th class="text-right"> {{TotalYear1 | FormatAsCurrency}}</th>
+                    <th class="text-right"> {{TotalYear1| DividedBy:TotalYear1,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}</th>
+                    {% elseif RowYear == 'Total' %}
+                    <th class="text-right"> {{Total5Year | FormatAsCurrency}}</th>
+                    <th class="text-right"> {{Total5Year| DividedBy:Total5Year,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}</th>
+                    {% endif %}
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    <div class="col-md-2">
+        <table class="yeartables" style="width:100%">
+            <thead>
+                <tr>
+                    <th class="year" colspan="2"> {{row.Year}}</th>
+                </tr>
+                <tr>
+                <tr>
+                    <th  class="text-right">Total Given</th>
+                    <th  class="text-right">% Total</th>
+                </tr>
+            </thead>
+            <tbody>
+        {% assign RowYear = row.Year %}
+        {% assign rowcount = 0 %}
+    {% endif %}
+    {% assign rowcount = rowcount | Plus:1 %}
+    {% if row.Year == currentyear %}
+    {% continue %}
+    {% endif %}
+                <tr>
+                {% if RowYear == 5yearsback %}
+                    <td  class="text-right">
+                        Wk {{ row.Week }}
+                    </td>
+                {% endif %}
+                    <td class="text-right">
+                        {{row.WeekAmount | FormatAsCurrency}}
+                    </td>
+                    <td class="text-right">
+                    {% if RowYear == 5yearsback %}
+                        {{row.WeekAmount | DividedBy:TotalYear5,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}
+                    {% elseif RowYear == 4yearsback %}
+                        {{row.WeekAmount | DividedBy:TotalYear4,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}
+                    {% elseif RowYear == 3yearsback %}
+                        {{row.WeekAmount | DividedBy:TotalYear3,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}
+                    {% elseif RowYear == 2yearsback %}
+                        {{row.WeekAmount | DividedBy:TotalYear2,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}
+                    {% elseif RowYear == 1yearback %}
+                        {{row.WeekAmount | DividedBy:TotalYear1,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}
+                    {% elseif RowYear == 'Total' %}
+                        {{row.WeekAmount | DividedBy:Total5Year,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}
+                        {% assign weekpercent = row.WeekAmount | DividedBy:Total5Year,4 %}
+                        {% assign totalpercent = totalpercent | BBM_AddToArray:weekpercent %}
+                    {% endif %}
+                    </td>
+                </tr>
+{% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th class="text-right"> {{Total5Year | FormatAsCurrency}}</th>
+                    <th class="text-right"> {{Total5Year | DividedBy:Total5Year,4 | Times:100 | Format:'#,##0.00' | Append:' %' }}</th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-5">
+                <table class="yeartables" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th class="year" colspan="4"> {{currentyear}} Projections</th>
+                        </tr>
+                        <tr>
+                        <tr>
+                            <th  class="text-right">
+                                Week
+                            </th>
+                            <th  class="text-right">
+                                Total Given
+                            </th>
+                            <th  class="text-right">
+                                % Multiplier
+                            </th>
+                            <th  class="text-right">
+                                Year End Projection
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% assign rowcount = 1 %}
+                    {% for row in table1.rows %}
+                    {% if row.Year == currentyear %}
+                        <tr>
+                            <td  class="text-right">
+                                Week {{row.Week}}
+                            </td>
+                            <td class="text-right">
+                                {{row.WeekAmount  | FormatAsCurrency}}
+                                {% assign CurrentTotal = CurrentTotal | Plus:row.WeekAmount %}
+                            </td>
+                            <td class="text-right">
+                            {% if row.WeekAmount and row.WeekAmount != 0 %}
+                                {% assign currentPercentTotal = currentPercentTotal | Plus:totalpercent[row.Week] %}
+                                {{totalpercent[row.Week] | Times:100 | Format:'#,##0.00' | Append:' %' }}
+                            {% endif %}
+                            </td>
+                            <td class="text-right">
+                                {% if row.WeekAmount and row.WeekAmount != 0 %}
+                                    {{CurrentTotal | DividedBy:currentPercentTotal | FormatAsCurrency}}
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endif %}
+                    {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th  class="text-right">
+                                Total
+                            </th>
+                            <th class="text-right">
+                                {{CurrentTotal  | FormatAsCurrency}}
+                            </th>
+                            <th class="text-right">
+                                {{currentPercentTotal | Times:100 | Format:'#,##0.00' | Append:' %' }}
+                            </th>
+                            <th class="text-right">
+                                {{CurrentTotal | DividedBy:currentPercentTotal | FormatAsCurrency}}
+                            </th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <div class="col-md-2 col-md-offset-1">
+                <table style="width:100%" class="yeartables">
+                    <thead>
+                    <tr>
+                        <th colspan="3" class="year">Large Gifts</th>
+                    <tr> </tr>
+                    <tr>
+                        <th class="text-right"> Year</th>
+                        <th class="text-right"> Month</th>
+                        <th class="text-right"> Amount</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in table2.rows %}
+                            <tr>
+                                <td class="text-right"> {{row.Year}}</td>
+                                <td class="text-right"> {{row.Month}}</td>
+                                <td class="text-right"> {{row.Amount | FormatAsCurrency }}</td>
+                            </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="col-md-2 col-md-offset-1 row"  style="margin-top:50px;">
+                <div class="col-md-10 col-md-offset-2">
+                <table style="width:100%">
+                    <tr>
+                        <th> Year</th>
+                        <th> Total</th>
+                    </tr>
+                    {% assign RowYear = 5yearsback %}
+                    {% assign yeartotal = 0 %}
+                    {% for row in table1.rows %}
+                        {% if RowYear != row.Year and row.year != 'Total' %}
+                            <tr>
+                                <td> {{RowYear}}</td>
+                                <td> {{yeartotal | FormatAsCurrency }}</td>
+                            </tr>
+                            {% assign RowYear = row.year %}
+                            {% assign yeartotal = 0 %}
+                        {% endif %}
+                        {% assign yeartotal = yeartotal | Plus:row.WeekAmount %}
+                    {% endfor %}
+                </table>
+                </div>
+                <div class="col-md-6 col-md-offset-2 alert-success alert"  style="margin-top:50px;">
+                    <h4> {{Currentyear}} Year End Projections:</h4>
+                    {% if currentmonth  != 1 %}<p> {{ CurrentTotal | DividedBy: currentPercentTotal | FormatAsCurrency}}</p> {% else %}<p> One Week of the Year Must Be Completed</p> {% endif%}
+                </div>
+                <div class="col-md-6 col-md-offset-2">
+                    *This report is based on single gifts given less than $100,000
+                </div>
+            </div>
+</div>
+
+<div class="chart-container" style="position: relative; width:100%; height:300px; margin-bottom:50px;">
+    <h4> Giving History By Week</h4>
+    <canvas id="myChart">
+    </canvas>
+</div>
+
+<script>
+var ctx = document.getElementById("myChart").getContext('2d');
+var myChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: [{%for i in (1..52) %}"Week {{ i }}",{%endfor%}"Week 53"],
+        datasets: [
+
+        {% assign RowYear = 3yearsback %}
+        {
+            label: '{{RowYear}}',
+            fill: false,
+            data: [
+        {%- for row in table1.rows -%}
+        {%- if row.Year < 3yearsback -%}
+            {%- continue -%}
+        {%- endif -%}
+        {%- if RowYear != row.Year -%}
+        ],
+            {%- if RowYear == 5yearsback -%}
+                {%- assign color = 'rgba(83,89,94,' -%}
+            {%- elseif RowYear == 4yearsback -%}
+                {%- assign color = 'rgba(255,159,64,' -%}
+            {%- elseif RowYear == 3yearsback -%}
+                {%- assign color = 'rgba(46,93,121,' -%}
+            {%- elseif RowYear == 2yearsback -%}
+                {%- assign color = 'rgba(65,178,212,' -%}
+            {%- elseif RowYear == 1yearback -%}
+                {%- assign color = 'rgba(44,181,155,' -%}
+            {%- elseif RowYear == currentyear -%}
+                {%- assign color = 'rgba(240,160,75,' -%}
+            {%- else -%}
+                {%- assign color = 'rgba(153, 102, 255,' -%}
+            {%- endif -%}
+            backgroundColor: [
+                '{{color}} 1)',
+            ],
+            borderColor: [
+                '{{color}} 1)',
+            ],
+            borderWidth: 1
+        },{
+        {%- if row.year == 'Total' -%}
+            label: 'Average',
+        {%- else -%}
+            label: '{{row.year}}',
+        {%- endif -%}
+            fill: false,
+            data: [
+            {%- assign RowYear = row.year -%}
+        {%- endif -%}
+        {%- if row.year == 'Total' -%}
+            {{row.WeekAmount | DividedBy:5}},
+        {%- else -%}
+            {{row.WeekAmount}},
+        {%- endif -%}
+        {%- endfor-%}
+        ],
+            {%- if RowYear == 5yearsback -%}
+                {%- assign color = 'rgba(83,89,94,' -%}
+            {%- elseif RowYear == 4yearsback -%}
+                {%- assign color = 'rgba(46,93,121,' -%}
+            {%- elseif RowYear == 3yearsback -%}
+                {%- assign color = 'rgba(255,159,64,' -%}
+            {%- elseif RowYear == 2yearsback -%}
+                {%- assign color = 'rgba(65,178,212,' -%}
+            {%- elseif RowYear == 1yearback -%}
+                {%- assign color = 'rgba(44,181,155,' -%}
+            {%- elseif RowYear == currentyear -%}
+                {%- assign color = 'rgba(240,160,75,' -%}
+            {%- else -%}
+                {%- assign color = 'rgba(153, 102, 255,' -%}
+            {%- endif -%}
+            backgroundColor: [
+                '{{color}} 1)',
+            ],
+            borderColor: [
+                '{{color}} 1)',
+            ],
+            borderWidth: 1
+        },
+        ]
+    },
+    options: {
+         responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 2500,
+            },
+            legend: {
+                position: 'right'
+            },
+        scales: {
+            yAxes: [{
+                ticks: {
+                    beginAtZero:false
+                }
+            }]
+        }
+    }
+});
+
+</script>
