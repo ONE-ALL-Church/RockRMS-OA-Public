@@ -1,0 +1,107 @@
+{% assign notetype = PageParameter.TypeId %}
+{% unless notetype > '' %}
+    {% assign notetype='5' %}
+{% endunless %}
+
+{% sql return:'mynotes' %}
+select string_agg(interact.Id,',') as [Ids]
+FROM (SELECT distinct cci.Id
+FROM Interaction i
+INNER JOIN InteractionComponent icomp
+    ON i.InteractionComponentId = icomp.Id
+INNER JOIN InteractionChannel ichan
+    ON icomp.InteractionChannelId = ichan.Id
+        AND ichan.ComponentEntityTypeId = 209
+INNER JOIN ContentChannelItem cci
+    ON icomp.EntityId = cci.Id
+        AND cci.ContentChannelId = ichan.ChannelEntityId
+INNER JOIN ContentChannelItemAssociation ccia
+    ON cci.Id = ccia.ChildContentChannelItemId
+INNER JOIN ContentChannelItem m
+    ON ccia.ContentChannelItemId = m.Id
+        AND m.ContentChannelId = '{{notetype}}'
+INNER JOIN PersonAlias pa
+    ON i.PersonAliasId = pa.Id
+WHERE pa.PersonId = {{ CurrentPerson.Id }}
+) interact
+{% endsql %}
+{% for mynote in mynotes %}
+  {% assign myIds = mynote.Ids %}
+{% endfor %}
+{% assign notecount = mynotes | Size %}
+
+<StackLayout Spacing="8"
+    StyleClass="section">
+                    <Label StyleClass="h4, neue-bold, text-nav"
+                        Text="My Notes" />
+
+    <StackLayout Spacing="24">
+
+        {% if notecount > 0 %}
+            {%- contentchannelitem ids:'{{ myIds }}' iterator:'notes' sort:'StartDateTime desc' securityenabled:'false' -%}
+            {%- for item in notes -%}
+                {%- for message in item.ParentItems limit:1-%}
+                    {%- assign messageId = message.ContentChannelItem.Id -%}
+                    {%- assign messageTitle = message.ContentChannelItem.Title -%}
+                    {%- assign messageDate = message.ContentChannelItem.StartDateTime | Date:'M.d.yyyy' -%}
+                    {%- assign messageImage = message.ContentChannelItem | Attribute:'Thumbnail' -%}
+                    {%- assign seriesTitle = '' -%}
+                    {%- for series in message.ContentChannelItem.ParentItems limit:1 -%}
+                        {%- assign seriesTitle = series.ContentChannelItem.Title -%}
+                    {%- endfor -%}
+                {%- endfor- %}
+
+                <StackLayout Orientation="Horizontal" HorizontalOptions="FillAndExpand" Spacing="12">
+                    <StackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding PushPage}">
+                            <TapGestureRecognizer.CommandParameter>
+                                <Rock:PushPageParameters PageGuid="a9486f92-dc64-443f-a27e-72a06e55a8da">
+                                    <Rock:Parameter Name="ItemGuid" Value="{{ item.Guid }}" />
+                                </Rock:PushPageParameters>
+                            </TapGestureRecognizer.CommandParameter>
+                        </TapGestureRecognizer>
+                    </StackLayout.GestureRecognizers>
+                        {% if messageImage != '' %}
+                            <Rock:Image
+                                StyleClass="m-0"
+                                Aspect="AspectFill"
+                                WidthRequest="100"
+                                Source="https://cloudimages.oneandall.church/fetch/c_limit,q_auto:good,w_300,dpr_auto/{{ 'Global' | Attribute:'PublicApplicationRoot' | UrlEncode }}{{messageImage | UrlEncode}}"
+                                Ratio="6:5">
+                                <Rock:RoundedTransformation CornerRadius="12,12,12,12"/>
+                            </Rock:Image>
+                            {% else %}
+                            <Rock:Image
+                                StyleClass="m-0"
+                                Aspect="AspectFill"
+                                WidthRequest="100"
+                                    Source="{{ 'Global' | Attribute:'PublicApplicationRoot' }}Themes/ONEALL/Assets/Images/message_bg.jpg"
+                                Ratio="6:5">
+                                <Rock:RoundedTransformation CornerRadius="12,12,12,12"/>
+                            </Rock:Image>
+                        {% endif %}
+
+                        <StackLayout VerticalOptions="Center" Spacing="0">
+                        <Label Text="{{ messageTitle | Escape }}"
+                            StyleClass="neue-bold"
+                            MaxLines="2"
+                            LineBreakMode="TailTruncation" />
+                        {% if seriesTitle != '' %}
+                        <Label Text="Series: {{ seriesTitle | Escape }}"
+                            FontSize="Small"
+                            MaxLines="2"
+                            LineBreakMode="TailTruncation" />
+                        {% endif %}
+                        <Label Text="{{ messageDate }}"
+                            FontSize="Small"/>
+                        </StackLayout>
+                    </StackLayout>
+            {%- endfor -%}
+            {%- endcontentchannelitem -%}
+        {% else %}
+            <Label Text="No notes found." StyleClass="h4" />
+        {% endif %}
+    </StackLayout>
+
+
+</StackLayout>
