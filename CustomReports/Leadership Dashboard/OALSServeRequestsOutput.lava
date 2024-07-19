@@ -1,0 +1,209 @@
+<div class="row">
+    <div class="col-lg-2">
+        <div class="metric">
+            <h5>Total Requests</h5>
+            <span class="date">{{ 'Now' | Date:'sd' }}</span>
+            <i class="icon fas fa-hand-holding"></i>
+
+            <div class="value">
+                {{table1.rows[0].TotalServeRequests}}
+                <small>Requests</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <div class="metric">
+            <h5>Total Unique People</h5>
+            <span class="date">{{ 'Now' | Date:'sd' }}</span>
+            <i class="icon fas fa-users"></i>
+
+            <div class="value">
+                {{table1.rows[0].TotalUniquePeople}}
+                <small>Unique People</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <div class="metric">
+            <h5>Total Connected</h5>
+            <span class="date">{{ 'Now' | Date:'sd' }}</span>
+            <i class="icon fas fa-hands-helping"></i>
+
+            <div class="value">
+                {{table1.rows[0].ConnectedRequests}}
+                <small>People Connected</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <div class="metric">
+            <h5>Total Active</h5>
+            <span class="date">{{ 'Now' | Date:'sd' }}</span>
+            <i class="icon fas fa-hands-helping"></i>
+
+            <div class="value">
+                {{table1.rows[0].ActiveRequests | Plus:table1.rows[0].FutureRequests }}
+                <small>People Active</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <div class="metric">
+            <h5>Total Unassigned</h5>
+            <span class="date">{{ 'Now' | Date:'sd' }}</span>
+            <i class="icon fas fa-user"></i>
+
+            <div class="value">
+                {{table1.rows[0].UnassignedRequests}}
+                <small>People Unassigned</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <div class="metric">
+            <h5>Percent Connected</h5>
+            <span class="date">{{ 'Now' | Date:'sd' }}</span>
+            <i class="icon fas fa-percent"></i>
+
+            <div class="value">
+                {% assign activeRequests = table1.rows[0].TotalServeRequests | Minus:table1.rows[0].InactiveRequests %}
+                {{table1.rows[0].ConnectedRequests | DividedBy:activeRequests | Times:100 | Format:'##0' }}
+                <small>Percent Connected</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<ul id="myrequests" class="nav nav-tabs">
+    <li class="tab active"><a onclick="filterSelection('byMinistry')">By Ministry</a></li>
+    <li class="tab"><a onclick="filterSelection('byCampus')">By Campus</a></li>
+    <li class="tab"><a onclick="filterSelection('byMinCampus')">By Ministry and Campus</a></li>
+    <li class="tabt"><a onclick="filterSelection('byConnector')">By Connector</a></li>
+</ul>
+
+<div class="filterDiv byMinistry show">
+    <table id="byMinistry" class="display">
+        <thead>
+            <tr>
+                <th scope="col">Ministry</th>
+                <th scope="col">Serve Requests</th>
+                <th scope="col">Unique People</th>
+                <th scope="col">Connected Requests</th>
+                <th scope="col">Active Requests</th>
+                <th scope="col">Unassigned Requests</th>
+                <th scope="col">Pct Connected</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in table2.rows %}
+            <tr>
+                <td>{{ row.Ministry }}</td>
+                <td>{{ row.ServeRequests }}</td>
+                <td>{{ row.UniquePeople }}</td>
+                <td>{{ row.ConnectedRequests }}</td>
+                <td>{% assign activeRequests = row.ServeRequests | Minus:row.InactiveRequests %}{{ activeRequests | Minus:row.ConnectedRequests }}</td>
+                <td>{{ row.UnassignedRequests }}</td>
+                <td>{% if activeRequests > 0 %}{{ row.ConnectedRequests | DividedBy:activeRequests |Times:100  | Format:'##0'}}%{% else %}N/A{% endif %}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+    </table>
+</div>
+
+<div class="filterDiv byCampus">
+    <table class="display" id="byCampus">
+        <thead>
+            <tr>
+                <th scope="col">Campus</th>
+                <th scope="col">Serve Requests</th>
+                <th scope="col">Unique People</th>
+                <th scope="col">Connected Requests</th>
+                <th scope="col">Active Requests</th>
+                <th scope="col">Unassigned Requests</th>
+                <th scope="col">Percent Connected</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in table3.rows %}
+                <tr>
+                    <td>{{ row.Campus }}</td>
+                    <td>{{ row.ServeRequests }}</td>
+                    <td>{{ row.UniquePeople }}</td>
+                    <td>{{ row.ConnectedRequests }}</td>
+                <td>{% assign activeRequests = row.ServeRequests | Minus:row.InactiveRequests %}{{ activeRequests | Minus:row.ConnectedRequests }}</td>
+                <td>{{ row.UnassignedRequests }}</td>
+                <td>{% if activeRequests > 0 %}{{ row.ConnectedRequests | DividedBy:activeRequests |Times:100 | Format:'##0' }}%{% else %}N/A{% endif %}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="filterDiv byMinCampus">
+<table class="display" id="byMinCampus">
+  <thead>
+    <tr>
+      <th scope="col">Ministry</th>
+      <th scope="col">Campus</th>
+      <th scope="col">Serve Requests</th>
+      <th scope="col">Unique People</th>
+      <th scope="col">Connected Requests</th>
+                <th scope="col">Active Requests</th>
+                <th scope="col">Unassigned Requests</th>
+                <th scope="col">Percent Connected</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in table4.rows %}
+    <tr>
+      <td>{{ row.Ministry }}</td>
+      <td>{{ row.Campus }}</td>
+      <td>{{ row.ServeRequests }}</td>
+      <td>{{ row.UniquePeople }}</td>
+      <td>{{ row.ConnectedRequests }}</td>
+                <td>{% assign activeRequests = row.ServeRequests | Minus:row.InactiveRequests %}{{ activeRequests | Minus:row.ConnectedRequests }}</td>
+                <td>{{ row.UnassignedRequests }}</td>
+                <td>{% if activeRequests > 0 %}{{ row.ConnectedRequests | DividedBy:activeRequests |Times:100 | Format:'##0' }}%{% else %}N/A{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="filterDiv byConnector">
+<table class="display" id="byConnector">
+  <thead>
+    <tr>
+      <th scope="col">Name</th>
+      <th scope="col">Serve Requests</th>
+      <th scope="col">Unique People</th>
+      <th scope="col">Connected Requests</th>
+                <th scope="col">Active Requests</th>
+                <th scope="col">Unassigned Requests</th>
+                <th scope="col">Percent Connected</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in table5.rows %}
+    <tr>
+      <td>{{ row.NickName }} {{ row.LastName }}</td>
+      <td>{{ row.ServeRequests }}</td>
+      <td>{{ row.UniquePeople }}</td>
+      <td>{{ row.ConnectedRequests }}</td>
+                <td>{% assign activeRequests = row.ServeRequests | Minus:row.InactiveRequests %}{{ activeRequests | Minus:row.ConnectedRequests }}</td>
+                <td>{{ row.UnassignedRequests }}</td>
+                <td>{% if activeRequests > 0 %}{{ row.ConnectedRequests | DividedBy:activeRequests |Times:100 | Format:'##0' }}%{% else %}N/A{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script>
+$(document).ready( function () {
+    $('#byMinistry').DataTable({paging:false,"searching": false});
+    $('#byCampus').DataTable({paging:false,"searching": false});
+    $('#byMinCampus').DataTable({paging:false,"searching": false});
+    $('#byConnector').DataTable({paging:false,"searching": false});
+} );
+</script>

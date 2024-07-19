@@ -1,0 +1,51 @@
+SELECT DISTINCT datefromparts(Year(asd.SundayDate),Month(asd.SundayDate),1) AS [Date]
+FROM AnalyticsSourceDate asd
+WHERE asd.SundayDate >= dateadd(year, - 2, getdate())
+    AND asd.SundayDate <= getdate()
+group by year(asd.SundayDate)
+    ,MONTH(asd.SundayDate)
+ORDER By [Date]
+
+
+SELECT [Date]
+    , SeriesName
+    , sum(YValue) as YValue
+FROM (
+SELECT datefromparts(Year(cr.CreatedDateTime),Month(cr.CreatedDateTime),1) as [Date]
+    , CASE cr.ConnectionState WHEN 0 THEN 'Active' WHEN 1 THEN 'Inactive' WHEN 2 THEN 'Active' WHEN 3 THEN 'Connected' END as SeriesName
+    , count(cr.ConnectionState) as YValue
+FROM ConnectionRequest cr
+INNER JOIN ConnectionOpportunity co
+    ON cr.ConnectionOpportunityId = co.Id
+        AND cr.CreatedDateTime > dateadd(year,-2,getdate())
+        AND co.ConnectionTypeId = 1
+INNER JOIN Campus c
+    ON cr.CampusId = c.Id
+INNER JOIN PersonAlias pa
+    ON cr.PersonAliasId = pa.Id
+INNER JOIN AnalyticsSourceDate asd
+    ON cr.CreatedDateKey = asd.DateKey
+WHERE cr.ConnectionState = 1
+GROUP BY Year(cr.CreatedDateTime)
+    , Month(cr.CreatedDateTime)
+    , CASE cr.ConnectionState WHEN 0 THEN 'Active' WHEN 1 THEN 'Inactive' WHEN 2 THEN 'Active' WHEN 3 THEN 'Connected' END
+UNION ALL
+SELECT datefromparts(Year(cr.CreatedDateTime),Month(cr.CreatedDateTime),1) as [Date]
+    , 'Total' as [SeriesName]
+    , count(cr.Id) as YValue
+FROM ConnectionRequest cr
+INNER JOIN ConnectionOpportunity co
+    ON cr.ConnectionOpportunityId = co.Id
+        AND cr.CreatedDateTime > dateadd(year,-2,getdate())
+        AND co.ConnectionTypeId = 1
+INNER JOIN Campus c
+    ON cr.CampusId = c.Id
+INNER JOIN PersonAlias pa
+    ON cr.PersonAliasId = pa.Id
+INNER JOIN AnalyticsSourceDate asd
+    ON cr.CreatedDateKey = asd.DateKey
+GROUP BY Year(cr.CreatedDateTime)
+    , Month(cr.CreatedDateTime)
+) serve
+GROUP BY [Date]
+    , SeriesName

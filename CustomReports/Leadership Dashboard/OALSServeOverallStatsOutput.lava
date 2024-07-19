@@ -1,0 +1,40 @@
+<div class="row">
+    <div class="col-lg-3">
+        <div class="metric">
+            <h5>People in Serving Groups</h5>
+            <span class="date">{{ 'Now' | Date:'sd' }}</span>
+            <i class="icon fas fa-users"></i>
+
+            <div class="value">
+                {{table1.rows[0].People}}
+                <small>People</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3">
+        <div class="metric">
+            <h5>People in Open Serve Requests</h5>
+            <span class="date">{{ 'Now' | Date:'sd' }}</span>
+            <i class="icon fas fa-hands-helping"></i>
+
+            <div class="value">
+                {{table2.rows[0].TotalUniquePeople}}
+                <small>Open Serve Requests</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3">
+        <div class="metric">
+            <h5>Projected People Serving</h5>
+            <span class="date">{{ 'Now' | Date:'sd' }}</span>
+            <i class="icon fas fa-hands-helping"></i>
+
+            <div class="value">
+                {{table3.rows[0].Total}}
+                <small>People</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+

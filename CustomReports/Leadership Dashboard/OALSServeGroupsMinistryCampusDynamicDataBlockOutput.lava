@@ -1,0 +1,25 @@
+<table id="byCampus" class="display">
+    <thead>
+        <tr>
+            <th scope="col">Campus</th>
+            <th scope="col">Groups</th>
+            <th scope="col">People</th>
+            <th scope="col">Attendances</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+        <tr>
+            <td>{{ row.Campus }}</td>
+            <td>{{ row.Groups }}</td>
+            <td>{{ row.People }}</td>
+            <td>{{ row.Attendances }}</td>
+        </tr>
+    {% endfor %}
+</tbody>
+</table>
+<script>
+$(document).ready( function () {
+$('#byCampus').DataTable({paging:false,"searching": false});
+} );
+</script>

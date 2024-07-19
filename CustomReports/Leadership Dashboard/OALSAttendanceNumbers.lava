@@ -1,0 +1,729 @@
+{% assign ShowChristmasAttendance = false %}
+{% assign ShowWeekendAttendance = true %}
+{% assign TodaysDoW = 'Now' | Date:'ddd' %}
+{% if TodaysDoW == 'Sat' or TodaysDoW == 'Sun' %}
+    {% assign ReportingSunday = 'Now' | SundayDate | Date:'MM/dd/yyyy'  %}
+{% else %}
+    {% assign ReportingSunday = 'Now' | SundayDate | DateAdd:-7 | Date:'MM/dd/yyyy' %}
+{% endif %}
+
+{% sql %}
+DECLARE @PreviousSunday DATETIME = CONVERT(datetime, '{{ ReportingSunday }}')
+DECLARE @FirstDayofYear DATETIME = DATEADD(YEAR,DATEDIFF(YEAR,0,@PreviousSunday),0)
+SELECT
+    SUM(YValue) AS Total
+FROM
+    [MetricValue] AS mv
+LEFT JOIN  [MetricValuePartition] AS mvps ON mv.Id = mvps.MetricValueId
+INNER JOIN [MetricPartition] AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+LEFT JOIN [Schedule] AS s ON mvps.EntityId = s.Id
+
+LEFT JOIN  [MetricValuePartition] AS mvpc ON mv.Id = mvpc.MetricValueId
+INNER JOIN [MetricPartition] AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+INNER JOIN [Campus] AS C ON mvpc.EntityId = c.Id
+
+WHERE
+    mv.MetricId IN (6,7,8,10,16,17,18)
+     AND (s.CategoryId IN (50, 326, 337) )
+    AND mv.MetricValueDateTime <= @PreviousSunday AND mv.MetricValueDateTime >=  @FirstDayofYear
+{% endsql %} {% for item in results %} {% assign CurrentYTDAttTotal = item.Total  %} {% endfor %}
+
+{% comment %} Total Attendance Metrics by Campus {% endcomment %}
+
+{% if ShowWeekendAttendance %}
+    {% sql return:'AttByCampus'%}
+        -- Define Previous Sunday and Previous Year Sunday Dates
+    DECLARE @PreviousSunday DATETIME = CONVERT(datetime, '{{ ReportingSunday }}')
+    DECLARE @PreviousYearSunday DATETIME;
+
+    -- Determine the Previous Year Sunday
+    SELECT @PreviousYearSunday = MAX(py.[Date])
+    FROM [AnalyticsSourceDate] ps
+    INNER JOIN [AnalyticsSourceDate] py
+        ON py.CalendarYear = ps.CalendarYear - 1
+        AND py.CalendarWeek <= ps.CalendarWeek
+        AND py.DayOfWeek = 0
+    WHERE ps.[Date] = @PreviousSunday;
+
+    -- Define CTEs for readability
+    WITH ThirteenWeekAverage AS (
+        SELECT
+            sub.CampusId,
+            sub.CampusName,
+            AVG(sub.Total) AS ThirteenAverage
+        FROM (
+            SELECT
+                mv.MetricValueDateTime,
+                mvpc.EntityId AS CampusId,
+                c.Name AS CampusName,
+                SUM(mv.YValue) AS Total
+            FROM [MetricValue] AS mv
+            LEFT JOIN [MetricValuePartition] AS mvps ON mv.Id = mvps.MetricValueId
+            INNER JOIN [MetricPartition] AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+            LEFT JOIN [Schedule] AS s ON mvps.EntityId = s.Id
+            LEFT JOIN [MetricValuePartition] AS mvpc ON mv.Id = mvpc.MetricValueId
+            INNER JOIN [MetricPartition] AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+            INNER JOIN [Campus] AS c ON mvpc.EntityId = c.Id
+            INNER JOIN [AnalyticsSourceDate] AS asd ON CONVERT(date, mv.MetricValueDateTime, 101) = asd.Date
+            WHERE
+                mv.MetricId IN (6, 7, 8, 10, 16, 17, 18)
+                AND s.CategoryId IN (50, 326)
+                AND mv.MetricValueDateTime BETWEEN DATEADD(WEEK, -12, @PreviousSunday) AND @PreviousSunday
+                AND mv.MetricValueDateTime NOT IN ('2019-12-22', '2021-12-26')
+                AND asd.EasterWeekIndicator != 1 AND asd.Date NOT IN ('2019-12-22', '2021-12-26')
+            GROUP BY mvpc.EntityId, c.Name, mv.MetricValueDateTime
+        ) AS sub
+        GROUP BY sub.CampusName, sub.CampusId
+    ),
+    PreviousSundayTotal AS (
+        SELECT
+            mvpc.EntityId AS CampusId,
+            c.Name AS CampusName,
+            SUM(mv.YValue) AS Total
+        FROM [MetricValue] AS mv
+        LEFT JOIN [MetricValuePartition] AS mvps ON mv.Id = mvps.MetricValueId
+        INNER JOIN [MetricPartition] AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+        LEFT JOIN [Schedule] AS s ON mvps.EntityId = s.Id
+        LEFT JOIN [MetricValuePartition] AS mvpc ON mv.Id = mvpc.MetricValueId
+        INNER JOIN [MetricPartition] AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+        INNER JOIN [Campus] AS c ON mvpc.EntityId = c.Id
+        WHERE
+            mv.MetricId IN (6, 7, 8, 10, 16, 17, 18)
+            AND s.CategoryId IN (50, 326, 337)
+            AND mv.MetricValueDateTime = @PreviousSunday
+        GROUP BY mvpc.EntityId, c.Name
+    ),
+    PreviousYearThirteenWeekAverage AS (
+        SELECT
+            c.Id AS CampusId,
+            SUM(mv.YValue) / COUNT(DISTINCT DATEPART(isowk, mv.MetricValueDateTime)) AS ThirteenWeekAverage
+        FROM [MetricValue] AS mv
+        INNER JOIN [Metric] AS m ON m.Id = mv.MetricId
+        INNER JOIN [MetricPartition] AS mpc ON mpc.MetricId = m.Id AND mpc.EntityTypeId = 67
+        INNER JOIN [MetricValuePartition] AS mvc ON mvc.MetricValueId = mv.Id AND mvc.MetricPartitionId = mpc.Id
+        INNER JOIN [Campus] AS c ON mvc.EntityId = c.Id
+        INNER JOIN [AnalyticsSourceDate] AS asd ON CONVERT(date, mv.MetricValueDateTime, 101) = asd.Date
+        WHERE
+            mv.MetricId IN (7, 6, 8, 10, 16, 17, 18, 51, 52, 53)
+            AND mv.MetricValueDateTime BETWEEN DATEADD(WEEK, -12, @PreviousYearSunday) AND @PreviousYearSunday
+            AND mv.MetricValueDateTime NOT IN ('2019-12-22', '2021-12-26')
+            AND asd.EasterWeekIndicator != 1
+        GROUP BY c.Id
+    )
+    -- Main Query to Combine All Data
+    SELECT
+        twa.CampusId,
+        twa.CampusName,
+        pst.Total AS Total,
+        twa.ThirteenAverage,
+        pyta.ThirteenWeekAverage AS PreviousYearThirteenAverage
+    FROM ThirteenWeekAverage AS twa
+    LEFT JOIN PreviousSundayTotal AS pst ON twa.CampusId = pst.CampusId
+    LEFT JOIN PreviousYearThirteenWeekAverage AS pyta ON twa.CampusId = pyta.CampusId
+    ORDER BY twa.CampusId;
+    {% endsql %}
+    {% sql return:'KidsAttByCampus'%}
+        -- Define Previous Sunday and Previous Year Sunday Dates
+    DECLARE @PreviousSunday DATETIME = CONVERT(datetime, '{{ ReportingSunday }}')
+    DECLARE @PreviousYearSunday DATETIME;
+
+    -- Determine the Previous Year Sunday
+    SELECT @PreviousYearSunday = MAX(py.[Date])
+    FROM [AnalyticsSourceDate] ps
+    INNER JOIN [AnalyticsSourceDate] py
+        ON py.CalendarYear = ps.CalendarYear - 1
+        AND py.CalendarWeek <= ps.CalendarWeek
+        AND py.DayOfWeek = 0
+    WHERE ps.[Date] = @PreviousSunday;
+
+    -- Define CTEs for readability
+    WITH ThirteenWeekAverage AS (
+        SELECT
+            sub.CampusId,
+            sub.CampusName,
+            AVG(sub.Total) AS ThirteenAverage
+        FROM (
+            SELECT
+                mv.MetricValueDateTime,
+                mvpc.EntityId AS CampusId,
+                c.Name AS CampusName,
+                SUM(mv.YValue) AS Total
+            FROM [MetricValue] AS mv
+            LEFT JOIN [MetricValuePartition] AS mvps ON mv.Id = mvps.MetricValueId
+            INNER JOIN [MetricPartition] AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+            LEFT JOIN [Schedule] AS s ON mvps.EntityId = s.Id
+            LEFT JOIN [MetricValuePartition] AS mvpc ON mv.Id = mvpc.MetricValueId
+            INNER JOIN [MetricPartition] AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+            INNER JOIN [Campus] AS c ON mvpc.EntityId = c.Id
+            INNER JOIN [AnalyticsSourceDate] AS asd ON CONVERT(date, mv.MetricValueDateTime, 101) = asd.Date
+            WHERE
+                mv.MetricId IN (16, 17, 18)
+                AND s.CategoryId IN (50, 326)
+                AND mv.MetricValueDateTime BETWEEN DATEADD(WEEK, -12, @PreviousSunday) AND @PreviousSunday
+                AND mv.MetricValueDateTime NOT IN ('2019-12-22', '2021-12-26')
+                AND asd.EasterWeekIndicator != 1 AND asd.Date NOT IN ('2019-12-22', '2021-12-26')
+            GROUP BY mvpc.EntityId, c.Name, mv.MetricValueDateTime
+        ) AS sub
+        GROUP BY sub.CampusName, sub.CampusId
+    ),
+    PreviousSundayTotal AS (
+        SELECT
+            mvpc.EntityId AS CampusId,
+            c.Name AS CampusName,
+            SUM(mv.YValue) AS Total
+        FROM [MetricValue] AS mv
+        LEFT JOIN [MetricValuePartition] AS mvps ON mv.Id = mvps.MetricValueId
+        INNER JOIN [MetricPartition] AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+        LEFT JOIN [Schedule] AS s ON mvps.EntityId = s.Id
+        LEFT JOIN [MetricValuePartition] AS mvpc ON mv.Id = mvpc.MetricValueId
+        INNER JOIN [MetricPartition] AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+        INNER JOIN [Campus] AS c ON mvpc.EntityId = c.Id
+        WHERE
+            mv.MetricId IN (16, 17, 18)
+            AND s.CategoryId IN (50, 326, 337)
+            AND mv.MetricValueDateTime = @PreviousSunday
+        GROUP BY mvpc.EntityId, c.Name
+    ),
+    PreviousYearThirteenWeekAverage AS (
+        SELECT
+            c.Id AS CampusId,
+            SUM(mv.YValue) / COUNT(DISTINCT DATEPART(isowk, mv.MetricValueDateTime)) AS ThirteenWeekAverage
+        FROM [MetricValue] AS mv
+        INNER JOIN [Metric] AS m ON m.Id = mv.MetricId
+        INNER JOIN [MetricPartition] AS mpc ON mpc.MetricId = m.Id AND mpc.EntityTypeId = 67
+        INNER JOIN [MetricValuePartition] AS mvc ON mvc.MetricValueId = mv.Id AND mvc.MetricPartitionId = mpc.Id
+        INNER JOIN [Campus] AS c ON mvc.EntityId = c.Id
+        INNER JOIN [AnalyticsSourceDate] AS asd ON CONVERT(date, mv.MetricValueDateTime, 101) = asd.Date
+        WHERE
+            mv.MetricId IN (16, 17, 18)
+            AND mv.MetricValueDateTime BETWEEN DATEADD(WEEK, -12, @PreviousYearSunday) AND @PreviousYearSunday
+            AND mv.MetricValueDateTime NOT IN ('2019-12-22', '2021-12-26')
+            AND asd.EasterWeekIndicator != 1
+        GROUP BY c.Id
+    )
+    -- Main Query to Combine All Data
+    SELECT
+        twa.CampusId,
+        twa.CampusName,
+        pst.Total AS Total,
+        twa.ThirteenAverage,
+        pyta.ThirteenWeekAverage AS PreviousYearThirteenAverage
+    FROM ThirteenWeekAverage AS twa
+    LEFT JOIN PreviousSundayTotal AS pst ON twa.CampusId = pst.CampusId
+    LEFT JOIN PreviousYearThirteenWeekAverage AS pyta ON twa.CampusId = pyta.CampusId
+    ORDER BY twa.CampusId;
+    {% endsql %}
+{% endif %}
+{% sql return:'GoodFriday'%}
+DECLARE @PreviousSunday DATETIME = CONVERT(datetime, '{{ ReportingSunday }}')
+SELECT  mvpc.EntityId AS CampusId, c.Name AS CampusName, SUM(YValue) AS 'Total'
+FROM MetricValue AS mv
+LEFT JOIN  [MetricValuePartition] AS mvps ON mv.Id = mvps.MetricValueId
+INNER JOIN [MetricPartition] AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+INNER JOIN [Schedule] AS s ON mvps.EntityId = s.Id AND s.CategoryId = 382
+LEFT JOIN  [MetricValuePartition] AS mvpc ON mv.Id = mvpc.MetricValueId
+INNER JOIN [MetricPartition] AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+INNER JOIN [Campus] AS C ON mvpc.EntityId = c.Id
+WHERE MetricValueDateTime = @PreviousSunday AND mv.YValue IS NOT NULL AND mv.YValue != 0
+GROUP BY mvpc.EntityId, c.Name
+ORDER BY mvpc.EntityId
+{% endsql %}
+
+{% if ShowChristmasAttendance %}
+    {%- sql return:'ChristmasAttendance' -%}
+    DECLARE @ChristmasDate DATE = (
+        SELECT TOP 1 asd.[Date] FROM AnalyticsSourceDate asd
+        WHERE asd.ChristmasIndicator = 1 AND dbo.getcurrentdatetime() > DATEADD(day, -5, asd.[Date])
+        ORDER BY [DateKey] DESC)
+
+    SELECT c.Id AS CampusId, c.Name AS CampusName, SUM(YValue) AS Total
+    FROM Campus c
+    INNER JOIN AttributeValue av ON c.Id = av.EntityId AND av.AttributeId = 14713 AND c.IsActive = 1
+    CROSS APPLY [dbo].[CCVufnUtility_CsvToTable_UniqueIdentifier](av.Value) cs
+    INNER JOIN Schedule s ON cs.Item = s.Guid AND s.CategoryId = 410
+    OUTER APPLY (
+        SELECT m.Title, mv.MetricId,  mv.YValue, mvc.EntityId AS CampusId, mvs.EntityId AS ScheduleId, mv.MetricValueDateTime
+        FROM Metric m
+        INNER JOIN MetricPartition mpc ON m.Id = mpc.MetricId AND mpc.EntityTypeId = 67
+        INNER JOIN MetricPartition mps ON m.Id = mps.MetricId AND mps.EntityTypeId = 54
+        INNER JOIN MetricValue mv ON m.Id = mv.MetricId
+        INNER JOIN MetricValuePartition mvc ON mv.Id = mvc.MetricValueId AND mpc.Id = mvc.MetricPartitionId AND mvc.EntityId = c.Id
+        INNER JOIN MetricValuePartition mvs ON mv.Id = mvs.MetricValueId AND mps.Id = mvs.MetricPartitionId AND mvs.EntityId = s.Id
+        INNER JOIN (
+            SELECT * FROM AnalyticsSourceDate asd WHERE asd.[Date] BETWEEN DATEADD(day, -5, @ChristmasDate) AND DATEADD(day, 1, @ChristmasDate)
+            ) XMasDays ON mv.MetricValueDateTime = XMasDays.SundayDate AND DATEPART(WEEKDAY,s.EffectiveStartDate) = DATEPART(WEEKDAY,XMasDays.[Date])
+        WHERE m.Id IN (6,7,8,10,16,17,18)
+        ) mvaud
+    GROUP BY c.Id, c.Name
+    {%- endsql -%}
+{% endif %}
+{% sql return:'PrayerNight'%}
+-- Define the Previous Sunday date
+    DECLARE @PreviousSunday DATETIME = CONVERT(datetime, '{{ReportingSunday}}');
+    DECLARE @MetricId INT = 9;
+    DECLARE @MostRecentDate DATETIME;
+    DECLARE @SecondRecentDate DATETIME;
+    -- Subquery to find the most recent date across all campuses
+
+    SELECT @MostRecentDate = MAX(mv.MetricValueDateTime)
+    FROM MetricValue AS mv
+    WHERE mv.MetricId = @MetricId
+    AND mv.YValue IS NOT NULL
+    AND mv.YValue != 0
+    AND @PreviousSunday >= mv.MetricValueDateTime;
+
+    SELECT @SecondRecentDate = MAX(mv.MetricValueDateTime)
+    FROM MetricValue AS mv
+    WHERE mv.MetricId = @MetricId
+    AND mv.YValue IS NOT NULL
+    AND mv.YValue != 0
+    AND DATEADD(day, -28, @MostRecentDate) >= mv.MetricValueDateTime;
+
+    -- Main query to fetch metrics and aggregate data
+    SELECT
+        mvpc.EntityId AS CampusId,
+        c.Name AS CampusName,
+        COALESCE(SUM(CASE WHEN mv.MetricValueDateTime = @MostRecentDate THEN mv.YValue ELSE 0 END), 0) AS Total,
+        COALESCE(SUM(LastMonth.LastPrayerNight), 0) AS LastPrayerNight,
+        COALESCE(SUM(MonthAverage.MonthAverage), 0) AS MonthAverage,
+        @MostRecentDate AS MostRecentDate,
+        @SecondRecentDate AS SecondRecentDate
+    FROM
+        MetricValue AS mv
+    LEFT JOIN
+        MetricValuePartition AS mvps ON mv.Id = mvps.MetricValueId
+    INNER JOIN
+        MetricPartition AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+    LEFT JOIN
+        Schedule AS s ON mvps.EntityId = s.Id
+    LEFT JOIN
+        MetricValuePartition AS mvpc ON mv.Id = mvpc.MetricValueId
+    INNER JOIN
+        MetricPartition AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+    INNER JOIN
+        Campus AS c ON mvpc.EntityId = c.Id
+    LEFT JOIN (
+        SELECT
+            mvpc.EntityId AS CampusId,
+            c.Name AS CampusName,
+            SUM(mv.YValue) AS LastPrayerNight
+        FROM
+            MetricValue AS mv
+        LEFT JOIN
+            MetricValuePartition AS mvps ON mv.Id = mvps.MetricValueId
+        INNER JOIN
+            MetricPartition AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+        LEFT JOIN
+            Schedule AS s ON mvps.EntityId = s.Id
+        LEFT JOIN
+            MetricValuePartition AS mvpc ON mv.Id = mvpc.MetricValueId
+        INNER JOIN
+            MetricPartition AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+        INNER JOIN
+            Campus AS c ON mvpc.EntityId = c.Id
+        WHERE
+            mv.MetricId = @MetricId
+            AND MONTH(mv.MetricValueDateTime) = MONTH(@SecondRecentDate)
+            AND YEAR(mv.MetricValueDateTime) = YEAR(@SecondRecentDate)
+            AND mv.YValue IS NOT NULL
+            AND mv.YValue != 0
+        GROUP BY
+            mvpc.EntityId, c.Name
+    ) AS LastMonth ON c.Id = LastMonth.CampusId
+    LEFT JOIN (
+        SELECT
+            mvpc.EntityId AS CampusId,
+            c.Name AS CampusName,
+            AVG(mv.YValue) AS MonthAverage
+        FROM
+            MetricValue AS mv
+        LEFT JOIN
+            MetricValuePartition AS mvps ON mv.Id = mvps.MetricValueId
+        INNER JOIN
+            MetricPartition AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+        LEFT JOIN
+            Schedule AS s ON mvps.EntityId = s.Id
+        LEFT JOIN
+            MetricValuePartition AS mvpc ON mv.Id = mvpc.MetricValueId
+        INNER JOIN
+            MetricPartition AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+        INNER JOIN
+            Campus AS c ON mvpc.EntityId = c.Id
+        WHERE
+            mv.MetricId = @MetricId
+            AND mv.MetricValueDateTime >= dateadd(month,datediff(month,0,@MostRecentDate)-7,0) AND mv.MetricValueDateTime < @MostRecentDate
+            AND mv.YValue IS NOT NULL
+            AND mv.YValue != 0
+        GROUP BY
+            mvpc.EntityId, c.Name
+    ) AS MonthAverage ON c.Id = MonthAverage.CampusId
+    WHERE
+        mv.MetricId = @MetricId
+        AND mv.MetricValueDateTime = @MostRecentDate
+    GROUP BY
+        mvpc.EntityId, c.Name;
+{% endsql %}
+
+{% sql return:'YouthService'%}
+    -- Define the Previous Sunday date
+    DECLARE @PreviousSunday DATETIME = CONVERT(datetime, '{{ReportingSunday}}');
+    DECLARE @MetricId INT = 10;
+    DECLARE @MostRecentDate DATETIME;
+    DECLARE @SecondRecentDate DATETIME;
+    -- Subquery to find the most recent date across all campuses
+
+    SELECT @MostRecentDate = MAX(mv.MetricValueDateTime)
+    FROM MetricValue AS mv
+    WHERE mv.MetricId = @MetricId
+    AND mv.YValue IS NOT NULL
+    AND mv.YValue != 0
+    AND @PreviousSunday >= mv.MetricValueDateTime;
+
+    SELECT @SecondRecentDate = MAX(mv.MetricValueDateTime)
+    FROM MetricValue AS mv
+    WHERE mv.MetricId = @MetricId
+    AND mv.YValue IS NOT NULL
+    AND mv.YValue != 0
+    AND DATEADD(day, -28, @MostRecentDate) >= mv.MetricValueDateTime;
+
+    -- Main query to fetch metrics and aggregate data
+    SELECT
+        mvpc.EntityId AS CampusId,
+        c.Name AS CampusName,
+        COALESCE(SUM(CASE WHEN mv.MetricValueDateTime = @MostRecentDate THEN mv.YValue ELSE 0 END), 0) AS Total,
+        COALESCE(SUM(LastMonth.LastPrayerNight), 0) AS LastPrayerNight,
+        COALESCE(SUM(MonthAverage.MonthAverage), 0) AS MonthAverage,
+        @MostRecentDate AS MostRecentDate,
+        @SecondRecentDate AS SecondRecentDate
+    FROM
+        MetricValue AS mv
+    LEFT JOIN
+        MetricValuePartition AS mvps ON mv.Id = mvps.MetricValueId
+    INNER JOIN
+        MetricPartition AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+    LEFT JOIN
+        Schedule AS s ON mvps.EntityId = s.Id
+    LEFT JOIN
+        MetricValuePartition AS mvpc ON mv.Id = mvpc.MetricValueId
+    INNER JOIN
+        MetricPartition AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+    INNER JOIN
+        Campus AS c ON mvpc.EntityId = c.Id
+    LEFT JOIN (
+        SELECT
+            mvpc.EntityId AS CampusId,
+            c.Name AS CampusName,
+            SUM(mv.YValue) AS LastPrayerNight
+        FROM
+            MetricValue AS mv
+        LEFT JOIN
+            MetricValuePartition AS mvps ON mv.Id = mvps.MetricValueId
+        INNER JOIN
+            MetricPartition AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+        LEFT JOIN
+            Schedule AS s ON mvps.EntityId = s.Id
+        LEFT JOIN
+            MetricValuePartition AS mvpc ON mv.Id = mvpc.MetricValueId
+        INNER JOIN
+            MetricPartition AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+        INNER JOIN
+            Campus AS c ON mvpc.EntityId = c.Id
+        WHERE
+            mv.MetricId = @MetricId
+            AND MONTH(mv.MetricValueDateTime) = MONTH(@SecondRecentDate)
+            AND YEAR(mv.MetricValueDateTime) = YEAR(@SecondRecentDate)
+            AND mv.YValue IS NOT NULL
+            AND mv.YValue != 0
+        GROUP BY
+            mvpc.EntityId, c.Name
+    ) AS LastMonth ON c.Id = LastMonth.CampusId
+    LEFT JOIN (
+        SELECT
+            mvpc.EntityId AS CampusId,
+            c.Name AS CampusName,
+            AVG(mv.YValue) AS MonthAverage
+        FROM
+            MetricValue AS mv
+        LEFT JOIN
+            MetricValuePartition AS mvps ON mv.Id = mvps.MetricValueId
+        INNER JOIN
+            MetricPartition AS mps ON mvps.MetricPartitionId = mps.Id AND mps.EntityTypeId = 54
+        LEFT JOIN
+            Schedule AS s ON mvps.EntityId = s.Id
+        LEFT JOIN
+            MetricValuePartition AS mvpc ON mv.Id = mvpc.MetricValueId
+        INNER JOIN
+            MetricPartition AS mpc ON mvpc.MetricPartitionId = mpc.Id AND mpc.EntityTypeId = 67
+        INNER JOIN
+            Campus AS c ON mvpc.EntityId = c.Id
+        WHERE
+            mv.MetricId = @MetricId
+            AND mv.MetricValueDateTime >= dateadd(month,datediff(month,0,@MostRecentDate)-7,0) AND mv.MetricValueDateTime < @MostRecentDate
+            AND mv.YValue IS NOT NULL
+            AND mv.YValue != 0
+        GROUP BY
+            mvpc.EntityId, c.Name
+    ) AS MonthAverage ON c.Id = MonthAverage.CampusId
+    WHERE
+        mv.MetricId = @MetricId
+        AND mv.MetricValueDateTime = @MostRecentDate
+    GROUP BY
+        mvpc.EntityId, c.Name;
+
+{% endsql %}
+
+<div class="row mb-5">
+{% if ShowChristmasAttendance %}
+    <div class="col-md-6">
+
+        <h2>Christmas Attendance</h2>
+        <p>Dec 23rd and 24th Services</p>
+        <table>
+            {% assign AttByCampusSorted = ChristmasAttendance | First %}
+            <thead>
+                <tr>
+                    <th></th><th style="text-align:right;vertical-align:top">&nbsp;Reporting Week</th>
+                </tr>
+            </thead>
+            {% assign AttTotal = 0 %}
+
+            <tbody>
+                {% for item in ChristmasAttendance %}
+                    {% if item.CampusId != '8' %}
+                        {% assign AttTotalForPerCapita = AttTotalForPerCapita | Plus:item.Total %}
+                    {% endif %}
+                    {% assign AttTotal = AttTotal | Plus:item.Total %}
+                    <tr>
+                        <td>{{ item.CampusName }}:&nbsp;</td><td style="text-align:right;"> {{ item.Total | Format:'###,##0' }}</td>
+                    </tr>
+                {% endfor %}
+                <tr>
+                    <td>Attendance Total:&nbsp;</td><td style="text-align:right;"> {{ AttTotal | Format:'###,##0' }}</td>
+                </tr>
+
+                {% comment %}
+                <tr>
+                    <td>&nbsp;</td><td style="text-align:right;"></td><td style="text-align:right;"></td>
+                </tr>
+
+                <tr>
+                    <td>{{ OnlineName }}:&nbsp;</td><td style="text-align:right;"> {{ OnlineTotal | Format:'###,##0' }}</td><td style="text-align:right;">&nbsp;{{ OnlineThirteenAverage | Format:'###,##0' }}</td><td style="text-align:right;">&nbsp;{{ OnlinePreviousYear | Format:'###,##0' }}</td>
+                </tr>
+                {% endcomment %}
+            </tbody>
+        </table>
+
+    </div>
+{% endif %}
+{% if ShowWeekendAttendance %}
+<div class="col-md-6">
+    <h2>All Weekend Attendance</h2>
+    {% comment %}<p>Includes Weekend Services (Adults and Kids) and Youth Midweek Service</p>{% endcomment %}
+    {% if GoodFriday != empty %}
+        <p>Easter Services Only</p>
+    {% endif %}
+    <table>
+    {% assign AttByCampusSorted = AttByCampus | First %}
+    {% comment %}
+    <tr>
+        <td></td><td style="text-align:right;">&nbsp;Reporting Week</td><td style="text-align:right;">&nbsp;&nbsp;&nbsp;{{ AttByCampusSorted.ThirteenCount}} Week Average</td><td style="text-align:right;">&nbsp;&nbsp;&nbsp;Previous Year</td>
+    </tr>
+    {% endcomment %}
+    <thead>
+    <tr>
+        <th></th>
+        <th style="text-align:right;vertical-align:top">Reporting Week</th>
+        <th style="text-align:right;vertical-align:top;padding-left:5px;">13 Week Lookback</th>
+        <th style="text-align:right;vertical-align:top;padding-left:5px;">13 Week Lookback<br>Previous Year</th>
+        <th style="text-align:right;vertical-align:top;padding-left:5px;">13 Week Lookback<br>% of Previous Year</th>
+    </tr>
+    </thead>
+    {% assign AttTotal = 0 %}
+    {% assign AttTotalAverage = 0 %}
+    {% assign AttThirteenTotal = 0 %}
+    {% assign AttPreviousYearThirteenAverage = 0 %}
+    {% assign AttTotalForPerCapita = 0 %}
+
+    <tbody>
+    {% for item in AttByCampus %}
+        {% if item.CampusId != '8' %}
+            {% assign AttTotalForPerCapita = AttTotalForPerCapita | Plus:item.Total %}
+            {% assign AttPreviousYearThirteenAverage = AttPreviousYearThirteenAverage | Plus:item.PreviousYearThirteenAverage %}
+            {% assign AttTotal = AttTotal | Plus:item.Total %}
+            {% assign AttTotalAverage = AttTotalAverage | Plus:item.ThirteenAverage %}
+            {% assign AttThirteenTotal = AttThirteenTotal | Plus:item.ThirteenTotal %}
+            <tr>
+                <td>{{ item.CampusName }}:&nbsp;</td>
+                <td style="text-align:right;"> {{ item.Total | Format:'###,##0' }}</td>
+                <td style="text-align:right;">&nbsp;{{ item.ThirteenAverage | Format:'###,##0' }}</td>
+                <td style="text-align:right;">&nbsp;{{ item.PreviousYearThirteenAverage | Format:'###,##0' }}</td>
+                <td style="text-align:right;">&nbsp;{{ item.ThirteenAverage | DividedBy:item.PreviousYearThirteenAverage | Format:'P'}}</td>
+            </tr>
+        {% else %}
+            {% comment %}
+            {% assign OnlineName = item.CampusName %}
+            {% assign OnlineTotal = item.Total %}
+            {% assign OnlineThirteenAverage = item.ThirteenAverage %}
+            {% assign OnlinePreviousYear = item.PreviousYearThirteenAverage %}
+            {% continue %}
+            {% endcomment %}
+        {% endif %}
+    {% endfor %}
+    <tr>
+        <td>Attendance Total:&nbsp;</td>
+        <td style="text-align:right;"> {{ AttTotal | Format:'###,##0' }}</td>
+        <td style="text-align:right;">&nbsp;{{ AttTotalAverage | Format:'###,##0' }}</td>
+        <td style="text-align:right;">&nbsp;{{ AttPreviousYearThirteenAverage | Format:'###,##0' }}</td>
+        <td style="text-align:right;">&nbsp;{{ AttTotalAverage | DividedBy:AttPreviousYearThirteenAverage | Format:'P' }}</td>
+    </tr>
+
+    {% comment %}
+    <tr>
+        <td>&nbsp;</td><td style="text-align:right;"></td><td style="text-align:right;"></td>
+    </tr>
+
+    <tr>
+        <td>{{ OnlineName }}:&nbsp;</td><td style="text-align:right;"> {{ OnlineTotal | Format:'###,##0' }}</td><td style="text-align:right;">&nbsp;{{ OnlineThirteenAverage | Format:'###,##0' }}</td><td style="text-align:right;">&nbsp;{{ OnlinePreviousYear | Format:'###,##0' }}</td>
+    </tr>
+    {% endcomment %}
+    </tbody>
+    </table>
+    {% if GoodFriday != empty %}
+        {% assign GFTotal = 0 %}
+
+        <h2>Good Friday</h2>
+        <table>
+        {% for item in GoodFriday %}
+            {% assign GFTotal = GFTotal | Plus:item.Total %}
+            <tr>
+                <td>{{ item.CampusName }}:&nbsp;</td><td style="text-align:right;"> {{ item.Total | Format:'###,##0' }}</td><td style="text-align:right;">&nbsp;{{ item.ThirteenAverage | Format:'###,##0' }}</td>
+            </tr>
+        {% endfor %}
+        <tr>
+            <td >Total:&nbsp;</td><td style="text-align:right;"> {{ GFTotal | Format:'###,##0' }}</td><td style="text-align:right;">&nbsp;{{ item.ThirteenAverage | Format:'###,##0' }}</td>
+        </tr>
+        </table>
+
+    {% endif %}
+
+</div>
+<div class="col-md-6">
+    <h2>Kids Attendance Only</h2>
+    {% comment %}<p>Includes Weekend Services (Adults and Kids) and Youth Midweek Service</p>{% endcomment %}
+    <table>
+    {% assign KidsAttByCampusSorted = KidsAttByCampus | First %}
+    {% comment %}
+    <tr>
+        <td></td><td style="text-align:right;">&nbsp;Reporting Week</td><td style="text-align:right;">&nbsp;&nbsp;&nbsp;{{ AttByCampusSorted.ThirteenCount}} Week Average</td><td style="text-align:right;">&nbsp;&nbsp;&nbsp;Previous Year</td>
+    </tr>
+    {% endcomment %}
+    <thead>
+    <tr>
+        <th></th>
+        <th style="text-align:right;vertical-align:top">Reporting Week</th>
+        <th style="text-align:right;vertical-align:top;padding-left:5px;">13 Week Lookback</th>
+        <th style="text-align:right;vertical-align:top;padding-left:5px;">13 Week Lookback<br>Previous Year</th>
+        <th style="text-align:right;vertical-align:top;padding-left:5px;">13 Week Lookback<br>% of Previous Year</th>
+    </tr>
+    </thead>
+    {% assign AttTotal = 0 %}
+    {% assign AttTotalAverage = 0 %}
+    {% assign AttThirteenTotal = 0 %}
+    {% assign AttPreviousYearThirteenAverage = 0 %}
+    {% assign AttTotalForPerCapita = 0 %}
+
+    <tbody>
+    {% for item in KidsAttByCampus %}
+        {% if item.CampusId != '8' %}
+            {% assign AttTotalForPerCapita = AttTotalForPerCapita | Plus:item.Total %}
+            {% assign AttPreviousYearThirteenAverage = AttPreviousYearThirteenAverage | Plus:item.PreviousYearThirteenAverage %}
+            {% assign AttTotal = AttTotal | Plus:item.Total %}
+            {% assign AttTotalAverage = AttTotalAverage | Plus:item.ThirteenAverage %}
+            {% assign AttThirteenTotal = AttThirteenTotal | Plus:item.ThirteenTotal %}
+            <tr>
+                <td>{{ item.CampusName }}:&nbsp;</td>
+                <td style="text-align:right;"> {{ item.Total | Format:'###,##0' }}</td>
+                <td style="text-align:right;">&nbsp;{{ item.ThirteenAverage | Format:'###,##0' }}</td>
+                <td style="text-align:right;">&nbsp;{{ item.PreviousYearThirteenAverage | Format:'###,##0' }}</td>
+                <td style="text-align:right;">&nbsp;{{ item.ThirteenAverage | DividedBy:item.PreviousYearThirteenAverage | Format:'P'}}</td>
+            </tr>
+        {% else %}
+            {% comment %}
+            {% assign OnlineName = item.CampusName %}
+            {% assign OnlineTotal = item.Total %}
+            {% assign OnlineThirteenAverage = item.ThirteenAverage %}
+            {% assign OnlinePreviousYear = item.PreviousYearThirteenAverage %}
+            {% continue %}
+            {% endcomment %}
+        {% endif %}
+    {% endfor %}
+    <tr>
+        <td>Attendance Total:&nbsp;</td>
+        <td style="text-align:right;"> {{ AttTotal | Format:'###,##0' }}</td>
+        <td style="text-align:right;">&nbsp;{{ AttTotalAverage | Format:'###,##0' }}</td>
+        <td style="text-align:right;">&nbsp;{{ AttPreviousYearThirteenAverage | Format:'###,##0' }}</td>
+        <td style="text-align:right;">&nbsp;{{ AttTotalAverage | DividedBy:AttPreviousYearThirteenAverage | Format:'P' }}</td>
+    </tr>
+
+    {% comment %}
+    <tr>
+        <td>&nbsp;</td><td style="text-align:right;"></td><td style="text-align:right;"></td>
+    </tr>
+
+    <tr>
+        <td>{{ OnlineName }}:&nbsp;</td><td style="text-align:right;"> {{ OnlineTotal | Format:'###,##0' }}</td><td style="text-align:right;">&nbsp;{{ OnlineThirteenAverage | Format:'###,##0' }}</td><td style="text-align:right;">&nbsp;{{ OnlinePreviousYear | Format:'###,##0' }}</td>
+    </tr>
+    {% endcomment %}
+    </tbody>
+    </table>
+
+</div>
+{% endif %}
+</div>
+<div class="row mb-5">
+{% if PrayerNight != empty %}
+    <div class="col-md-6">
+        <h2>Prayer Night</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th></th><th style="text-align:right;vertical-align:top">&nbsp;{{ PrayerNight[0].MostRecentDate | Date:'MMMM yyyy'}}</th>
+                    <th>&nbsp;&nbsp;&nbsp;{{ PrayerNight[0].SecondRecentDate | Date:'MMMM yyyy'}}</th>
+                    <th>&nbsp;&nbsp;&nbsp;Prev 6 Month Average</th>
+                </tr>
+            </thead>
+            {% for item in PrayerNight %}
+            <tr>
+                <td>{{ item.CampusName }}:&nbsp;</td>
+                <td style="text-align:right;"> {{ item.Total | Format:'###,##0' }}</td>
+                <td style="text-align:right;">&nbsp;{{ item.LastPrayerNight | Format:'###,##0' }}</td>
+                <td style="text-align:right;">&nbsp;{{ item.MonthAverage | Format:'###,##0' }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+{% endif %}
+
+    {% if YouthService != empty %}
+        <div class="col-md-6">
+        <h2>One Night</h2>
+        <table>
+        <thead>
+            <tr>
+                <th></th><th style="text-align:right;vertical-align:top">&nbsp;{{ YouthService[0].MostRecentDate | Date:'MMMM yyyy'}}</th>
+                <th>&nbsp;&nbsp;&nbsp;{{ YouthService[0].SecondRecentDate | Date:'MMMM yyyy'}}</th>
+                <th>&nbsp;&nbsp;&nbsp;Prev 6 Month Average</th>
+            </tr>
+        </thead>
+        {% for item in YouthService %}
+        <tr>
+            <td>{{ item.CampusName }}:&nbsp;</td>
+            <td style="text-align:right;"> {{ item.Total | Format:'###,##0' }}</td>
+            <td style="text-align:right;">&nbsp;{{ item.LastPrayerNight | Format:'###,##0' }}</td>
+            <td style="text-align:right;">&nbsp;{{ item.MonthAverage | Format:'###,##0' }}</td>
+        </tr>
+        {% endfor %}
+        </table>
+        </div>
+    {% endif %}
+</div>

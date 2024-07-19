@@ -1,0 +1,151 @@
+{% sql %}
+    DECLARE @PreviousSunday DATETIME = CONVERT(datetime, '{{ 'Now' | DateAdd:-6 | SundayDate }}');
+WITH WeeklyAttendance AS (
+        SELECT CONVERT(DATE, mv.MetricValueDateTime, 101) AS [DateTime],
+            asd.CalendarWeek AS [Week],
+            mvpc.EntityId AS CampusId,
+            c.Name AS CampusName,
+            SUM(YValue) AS Total
+        FROM [MetricValue] AS mv
+        LEFT JOIN [MetricValuePartition] AS mvps ON mv.Id = mvps.MetricValueId
+        INNER JOIN [MetricPartition] AS mps ON mvps.MetricPartitionId = mps.Id
+            AND mps.EntityTypeId = 54
+        LEFT JOIN [Schedule] AS s ON mvps.EntityId = s.Id
+        LEFT JOIN [MetricValuePartition] AS mvpc ON mv.Id = mvpc.MetricValueId
+        INNER JOIN [MetricPartition] AS mpc ON mvpc.MetricPartitionId = mpc.Id
+            AND mpc.EntityTypeId = 67
+        INNER JOIN [Campus] AS C ON mvpc.EntityId = c.Id
+        INNER JOIN AnalyticsSourceDate asd ON CONVERT(DATE, mv.MetricValueDateTime, 101) = asd.DATE
+        WHERE mv.MetricId IN (6, 7, 8, 10, 16, 17, 18)
+            AND (s.CategoryId IN (50, 326))
+            AND mv.MetricValueDateTime NOT IN ('2019-12-22', '2021-12-26')
+            AND asd.EasterWeekIndicator != 1
+            AND asd.DATE NOT IN ('2019-12-22', '2021-12-26')
+            AND NOT (asd.DATE < '2022-10-01' AND c.Id = 10)
+            AND asd.DATE BETWEEN DATEADD(week, -14, DATEADD(year, - 2, @PreviousSunday))
+                AND @PreviousSunday
+        GROUP BY mvpc.EntityId,
+            c.Name,
+            mv.MetricValueDateTime,
+            asd.CalendarWeek
+        UNION ALL
+        SELECT CONVERT(DATE, mv.MetricValueDateTime, 101) as [DateTime],
+            asd.CalendarWeek AS [Week],
+            0 AS CampusId,
+            'Total' AS CampusName,
+            SUM(YValue) AS Total
+        FROM [MetricValue] AS mv
+        LEFT JOIN [MetricValuePartition] AS mvps ON mv.Id = mvps.MetricValueId
+        INNER JOIN [MetricPartition] AS mps ON mvps.MetricPartitionId = mps.Id
+            AND mps.EntityTypeId = 54
+        LEFT JOIN [Schedule] AS s ON mvps.EntityId = s.Id
+        LEFT JOIN [MetricValuePartition] AS mvpc ON mv.Id = mvpc.MetricValueId
+        INNER JOIN [MetricPartition] AS mpc ON mvpc.MetricPartitionId = mpc.Id
+            AND mpc.EntityTypeId = 67
+        INNER JOIN [Campus] AS C ON mvpc.EntityId = c.Id
+        Inner join AnalyticsSourceDate asd on CONVERT(DATE, mv.MetricValueDateTime, 101) = asd.DATE
+        WHERE mv.MetricId IN (6, 7, 8, 10, 16, 17, 18)
+            AND (s.CategoryId IN (50, 326))
+            AND mv.MetricValueDateTime NOT IN ('2019-12-22', '2021-12-26')
+            AND asd.EasterWeekIndicator != 1
+            AND asd.DATE NOT IN ('2019-12-22', '2021-12-26')
+            AND NOT (asd.DATE < '2022-10-01' AND c.Id = 10)
+            AND asd.DATE BETWEEN DATEADD(week, -14, DATEADD(year, - 2, @PreviousSunday))
+                AND @PreviousSunday
+        GROUP BY mv.MetricValueDateTime,
+            asd.CalendarWeek
+        ),
+
+ThirteenWeekAverage AS (
+    SELECT
+        a.[DateTime],
+        a.CampusId,
+        a.CampusName,
+        round(AVG(b.Total),0) AS [ThirteenAverage]
+    FROM WeeklyAttendance a
+    LEFT JOIN WeeklyAttendance b ON a.CampusId = b.CampusId
+        AND b.[DateTime] BETWEEN DATEADD(week, -12, a.[DateTime])
+        AND a.[DateTime]
+    WHERE a.[DateTime] BETWEEN DATEADD(week,-1,DATEADD(year, -2, @PreviousSunday)) AND @PreviousSunday
+    GROUP BY
+        a.[DateTime],
+        a.CampusId,
+        a.CampusName
+)
+
+SELECT
+    a.[DateTime],
+    a.CampusId,
+    a.CampusName,
+    a.Total,
+    t.[ThirteenAverage],
+    p.[ThirteenAverage] AS [PreviousYearAverage],
+    asd.Date,pasd.Date
+FROM WeeklyAttendance a
+inner join AnalyticsSourceDate asd on a.[DateTime] = asd.Date
+inner join AnalyticsSourceDate pasd on pasd.CalendarYear = asd.CalendarYear - 1
+            AND pasd.CalendarWeek = asd.CalendarWeek -1
+            AND pasd.DayOfWeek = 0
+LEFT JOIN ThirteenWeekAverage t ON a.[DateTime] = t.[DateTime]
+    AND a.CampusId = t.CampusId
+LEFT JOIN ThirteenWeekAverage p ON p.[DateTime] = pasd.Date
+    AND a.CampusId = p.CampusId
+WHERE a.[DateTime] BETWEEN DATEADD(year, -1, @PreviousSunday) AND @PreviousSunday
+ORDER BY
+    a.CampusId,
+    a.[DateTime]
+
+{% endsql %}
+{%- assign dates = results | Distinct:'DateTime' -%}
+{% assign campuses = results | GroupBy:'CampusName' %}
+
+<div class="chart-container" style="position:relative; width:100%; height:300px; margin-bottom:50px;">
+     <h5>13 week Average % of Previous Year</h5>
+     <canvas id="myChart3"></canvas>
+</div>
+
+<script>
+    var ctx = document.getElementById("myChart3").getContext('2d');
+    var config = {
+        type: 'line',
+        data: {
+            labels: [{%-for date in dates -%}"{{date.DateTime | Date:'MM/dd/yy' }}"{%- unless forloop.last-%}, {%-endunless-%}{%-endfor-%}],
+            datasets: [
+              {%- for campus in campuses -%}
+              {%- assign parts = campus | PropertyToKeyValue -%}
+                {
+                    label: '{{parts.Key}}',
+                {%- capture color -%}{%- cycle 'bgc': '#FFC905','#4054D9','#8DC63F','#652D90','#00ADEE','#F15A29','#FF6675','#FFB1BB' -%}{%- endcapture -%}
+                        borderColor: "{{color | UnescapeDataString}}",
+                        backgroundColor: "{{color | UnescapeDataString}}",
+                        borderWidth: 1,
+                        fill:false,
+                        data: [
+                            {%- for avg in parts.Value -%}{%- if avg.ThirteenAverage > 0 and avg.PreviousYearAverage > 0 %}{x:'{{avg.DateTime | Date:'MM/dd/yy' }}',y:{{ avg.ThirteenAverage | DividedBy:avg.PreviousYearAverage | Times:100 | Format:'#,##0'}} }{%- unless forloop.last -%}, {%- endunless -%}{% endif %}{%- endfor -%} ] }{% unless forloop.last %},{%- endunless -%}{%- endfor %} ]
+              },
+                options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 2500,
+                },
+                plugins: {
+                    tooltip: {
+                        mode: 'index'
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit:'month',
+                            displayFormats: {
+                                month: 'MM/YY'
+                            },
+                            tooltipFormat: 'MM/DD/YY'
+                        }
+                    },
+                }
+            }}
+var Line3 = new Chart(ctx, config);
+</script>

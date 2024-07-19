@@ -1,0 +1,262 @@
+<div class="margin-b-sm row type-buttons">
+    <div class="col-sm-6">
+        <div class="btn btn-default btn-block btn-show-breakdown default">Breakdown</div>
+    </div>
+    <div class="col-sm-6">
+        <div class="btn btn-default btn-block btn-show-totals">Weekend Campus Totals</div>
+    </div>
+</div>
+ <div class="margin-b-sm row easterchristmas-buttons">
+        <!-- data-id specifies the Id number of the campus -->
+        <div class="col-sm-3"><div class="btn btn-default btn-block default" data-id="exclude">Hide Christmas/Easter</div></div>
+        <div class="col-sm-3"><div class="btn btn-default btn-block" data-id="include">Show Christmas/Easter</div></div>
+    </div>
+
+<div class="well well-breakdown" style="display: none;">
+    <div class="margin-b-sm row campus-buttons">
+        <!-- data-id specifies the Id number of the campus -->
+        {% campus where:'CampusStatusValueId == 2292 && CampusTypeValueId == 2295' iterator:'campuses' sort:'CampusTypeValueId desc, Id' %}
+            {% for c in campuses %}
+                <div class="col-sm-2"><div class="btn btn-default btn-block {% if forloop.first %}default{% endif %}" data-id="{{ c.Id}}">{{ c.Name | Remove:' Campus'}}</div></div>
+            {% endfor %}
+        {% endcampus %}
+    </div>
+<br>
+    <div class="margin-b-md row metric-buttons">
+        <!-- data-id specifies the Id number of the metric -->
+        <div class="col-sm-3"><div class="btn btn-default btn-block default" data-id="7">Auditorium Attendance</div></div>
+        <div class="col-sm-3"><div class="btn btn-default btn-block default" data-id="6">Overflow Venue 1 Attendance</div></div>
+        <div class="col-sm-3"><div class="btn btn-default btn-block default" data-id="8">Overflow Venue 2 Attendance</div></div>
+        <div class="col-sm-3"><div class="btn btn-default btn-block" data-id="10">Students</div></div>
+        <div class="col-sm-3"><div class="btn btn-default btn-block" data-id="16">Nursery</div></div>
+        <div class="col-sm-3"><div class="btn btn-default btn-block" data-id="17">Pre-K</div></div>
+        <div class="col-sm-3"><div class="btn btn-default btn-block" data-id="18">Elementary</div></div>
+        <div class="col-sm-3"><div class="btn btn-default btn-block" data-id="125">Young Adults</div></div>
+    </div>
+
+</div>
+<br>
+
+<div class="chart-container" style="position: relative; height:300px; width:100%;">
+    <canvas id="attendanceChart"></canvas>
+</div>
+
+<script>
+(function() {
+    var groupBy = function(xs, key) {
+        return xs.reduce(function(rv, x) {
+            (rv[x[key
+                ]
+            ] = rv[x[key
+                ]
+            ] || []).push(x);
+            return rv;
+        },
+        {});
+    };
+
+    var config = {
+        type: 'line',
+        data: {
+            datasets: []
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 2500,
+            },
+            legend: {
+                position: 'right'
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit:'month',
+                        displayFormats: {
+                            month: 'MM/YY'
+                        },
+                        tooltipFormat: 'MM/DD/YY'
+                    }
+                }
+            }
+        }
+    };
+
+    var chartColors = [
+        "#FFC905",
+        "#4054D9",
+        "#8DC63F",
+        "#652D90",
+        "#00ADEE",
+        "#F15A29",
+        "#FF6675",
+        "#FFB1BB",
+        "rgb(27, 79, 114)",
+        "rgb(210, 180, 222)"
+    ];
+
+    var ctx = document.getElementById("attendanceChart").getContext('2d');
+    var chart = new Chart(ctx, config);
+
+    var getTotalDataSet = function(rows) {
+        var groups = groupBy(rows, 'DateTime');
+        var dataset = { label: 'Total', borderWidth: 1, fill: false, data: []
+        };
+
+        for (k in groups) {
+            var value = 0;
+            groups[k
+            ].forEach((row) => {
+                value += row.Value;
+            });
+            dataset.data.push({ x: k, y: value
+            });
+        }
+
+        return dataset;
+    };
+
+    var addSummedDataSets = function(rows, key) {
+        var groups = groupBy(rows, key);
+        for (k in groups) {
+            var dates = groupBy(groups[k
+            ], 'DateTime');
+            var dataset = { label: k, borderWidth: 1, fill: false, data: []
+            };
+
+            for (d in dates) {
+                var value = 0;
+                dates[d
+                ].forEach((dRow) => {
+                    value += dRow.Value;
+                });
+                dataset.data.push({ x: d, y: value
+                });
+            }
+
+            dataset.borderColor = chartColors[config.data.datasets.length % chartColors.length
+            ];
+            dataset.backgroundColor = dataset.borderColor;
+            chart.data.datasets.push(dataset);
+        }
+    };
+
+    var addDataSetsInGroups = function(groups) {
+        for (k in groups) {
+            var dataset = { label: k, borderWidth: 1, fill: false, data: []
+            };
+
+            dataset.borderColor = chartColors[config.data.datasets.length % chartColors.length
+            ];
+            dataset.backgroundColor = dataset.borderColor;
+
+            groups[k
+            ].forEach((row) => {
+                dataset.data.push({ x: row.DateTime, y: row.Value
+                });
+            });
+
+            chart.data.datasets.push(dataset);
+        }
+    };
+
+    var updateChart = function() {
+        var campus = '';
+        var metric = '';
+        var easterchristmas = '';
+
+        if ($('.btn-show-breakdown').hasClass('btn-primary')) {
+            campus = $('.campus-buttons .btn-primary').map(function () { return $(this).data('id');
+            }).get().join(',');
+            metric = $('.metric-buttons .btn-primary').map(function () { return $(this).data('id');
+            }).get().join(',');
+        }
+        easterchristmas = $('.easterchristmas-buttons .btn-primary').map(function () { return $(this).data('id');
+        }).get().join(',');
+        $.ajax({
+            url: '/Webhooks/Lava.ashx/AttendanceData?Campus=' + campus + '&Metric=' + metric + '&EasterChristmas=' + easterchristmas,
+            success: function (rows) {
+                chart.data.datasets = [];
+
+                if ($('.btn-show-totals').hasClass('btn-primary')) {
+                    var ds = getTotalDataSet(rows);
+                    ds.borderColor = chartColors[config.data.datasets.length % chartColors.length
+                    ];
+                    ds.backgroundColor = ds.borderColor;
+
+                    chart.data.datasets.push(ds);
+                    addSummedDataSets(rows, 'Campus');
+                }
+                else {
+                    var ds = getTotalDataSet(rows);
+                    ds.borderColor = chartColors[config.data.datasets.length % chartColors.length
+                    ];
+                    ds.backgroundColor = ds.borderColor;
+                    ds.hidden = true;
+                    chart.data.datasets.push(ds);
+
+                    addDataSetsInGroups(groupBy(rows, 'Schedule'));
+                }
+
+                chart.update();
+            }
+        });
+    };
+
+    Sys.Application.add_load(function () {
+        $('.campus-buttons .btn.default').addClass('btn-primary').removeClass('btn-default');
+        $('.metric-buttons .btn.default').addClass('btn-primary').removeClass('btn-default');
+        $('.easterchristmas-buttons .btn.default').addClass('btn-primary').removeClass('btn-default');
+        $('.type-buttons .btn.default').addClass('btn-primary').removeClass('btn-default');
+
+        if ($('.btn-show-totals').hasClass('btn-primary')) {
+            $('.well-breakdown').hide();
+        }
+        else {
+            $('.well-breakdown').show();
+        }
+
+        $('.campus-buttons .btn').on('click', function () {
+            $('.campus-buttons .btn').removeClass('btn-primary').addClass('btn-default');
+            $(this).toggleClass('btn-default').toggleClass('btn-primary');
+
+            updateChart();
+        });
+        $('.easterchristmas-buttons .btn').on('click', function () {
+            $('.easterchristmas-buttons .btn').removeClass('btn-primary').addClass('btn-default');
+            $(this).toggleClass('btn-default').toggleClass('btn-primary');
+
+            updateChart();
+        });
+
+        $('.metric-buttons .btn').on('click', function () {
+            if ($(this).hasClass('btn-primary') && $('.metric-buttons .btn-primary').length == 1) {
+                return false;
+            }
+            //$('.metric-buttons .btn').removeClass('btn-primary').addClass('btn-default');
+            $(this).toggleClass('btn-default').toggleClass('btn-primary');
+
+            updateChart();
+        });
+
+        $('.type-buttons .btn').on('click', function () {
+            $('.type-buttons .btn').removeClass('btn-primary').addClass('btn-default');
+            $(this).toggleClass('btn-default').toggleClass('btn-primary');
+
+            if ($('.btn-show-totals').hasClass('btn-primary')) {
+                $('.well-breakdown').hide(350);
+            }
+            else {
+                $('.well-breakdown').show(350);
+            }
+
+            updateChart();
+        });
+
+        updateChart();
+    });
+})();
+</script>
+

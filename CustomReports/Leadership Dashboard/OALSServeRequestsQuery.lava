@@ -1,0 +1,116 @@
+SELECT COUNT(cr.Id) TotalServeRequests
+    , COUNT(DISTINCT pa.PersonId) TotalUniquePeople
+    , SUM(CASE isnull(cr.ConnectorPersonAliasId,0) WHEN 0 THEN 1 ELSE 0 END) AS UnassignedRequests
+    , SUM(CASE cr.ConnectionState WHEN 0 THEN 1 ELSE 0 END) AS ActiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 1 THEN 1 ELSE 0 END) AS InactiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 2 THEN 1 ELSE 0 END) AS FutureRequests
+    , SUM(CASE cr.ConnectionState WHEN 3 THEN 1 ELSE 0 END) AS ConnectedRequests
+FROM ConnectionRequest cr
+INNER JOIN ConnectionOpportunity co
+    ON cr.ConnectionOpportunityId = co.Id
+        AND cr.CreatedDateTime > '2019-07-20'
+        AND co.ConnectionTypeId = 1
+        AND co.IsActive = 1
+LEFT JOIN Campus c
+    ON cr.CampusId = c.Id
+INNER JOIN PersonAlias pa
+    ON cr.PersonAliasId = pa.Id
+
+SELECT  co.Name Ministry
+    , COUNT(cr.Id) ServeRequests
+    , COUNT(DISTINCT pa.PersonId) UniquePeople
+    , SUM(CASE isnull(cr.ConnectorPersonAliasId,0) WHEN 0 THEN 1 ELSE 0 END) AS UnassignedRequests
+    , SUM(CASE cr.ConnectionState WHEN 0 THEN 1 ELSE 0 END) AS ActiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 1 THEN 1 ELSE 0 END) AS InactiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 2 THEN 1 ELSE 0 END) AS FutureRequests
+    , SUM(CASE cr.ConnectionState WHEN 3 THEN 1 ELSE 0 END) AS ConnectedRequests
+FROM ConnectionRequest cr
+INNER JOIN ConnectionOpportunity co
+    ON cr.ConnectionOpportunityId = co.Id
+        AND cr.CreatedDateTime > '2019-07-20'
+        AND co.ConnectionTypeId = 1
+        AND co.IsActive = 1
+LEFT JOIN Campus c
+    ON cr.CampusId = c.Id
+INNER JOIN PersonAlias pa
+    ON cr.PersonAliasId = pa.Id
+GROUP BY co.Id
+    , co.Name
+ORDER BY co.Name
+
+SELECT  ISNULL(c.Name,'None') AS Campus
+    , COUNT(cr.Id) ServeRequests
+    , COUNT(DISTINCT pa.PersonId) UniquePeople
+    , SUM(CASE isnull(cr.ConnectorPersonAliasId,0) WHEN 0 THEN 1 ELSE 0 END) AS UnassignedRequests
+    , SUM(CASE cr.ConnectionState WHEN 0 THEN 1 ELSE 0 END) AS ActiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 1 THEN 1 ELSE 0 END) AS InactiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 2 THEN 1 ELSE 0 END) AS FutureRequests
+    , SUM(CASE cr.ConnectionState WHEN 3 THEN 1 ELSE 0 END) AS ConnectedRequests
+FROM ConnectionRequest cr
+INNER JOIN ConnectionOpportunity co
+    ON cr.ConnectionOpportunityId = co.Id
+        AND cr.CreatedDateTime > '2019-07-20'
+        AND co.ConnectionTypeId = 1
+        AND co.IsActive = 1
+LEFT JOIN Campus c
+    ON cr.CampusId = c.Id
+INNER JOIN PersonAlias pa
+    ON cr.PersonAliasId = pa.Id
+GROUP BY c.Id
+    , c.Name
+ORDER BY c.Name
+
+SELECT co.Name Ministry
+    , c.Name Campus
+    , COUNT(cr.Id) ServeRequests
+    , COUNT(DISTINCT pa.PersonId) UniquePeople
+    , SUM(CASE isnull(cr.ConnectorPersonAliasId,0) WHEN 0 THEN 1 ELSE 0 END) AS UnassignedRequests
+    , SUM(CASE cr.ConnectionState WHEN 0 THEN 1 ELSE 0 END) AS ActiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 1 THEN 1 ELSE 0 END) AS InactiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 2 THEN 1 ELSE 0 END) AS FutureRequests
+    , SUM(CASE cr.ConnectionState WHEN 3 THEN 1 ELSE 0 END) AS ConnectedRequests
+FROM ConnectionRequest cr
+INNER JOIN ConnectionOpportunity co
+    ON cr.ConnectionOpportunityId = co.Id
+        AND cr.CreatedDateTime > '2019-07-20'
+        AND co.ConnectionTypeId = 1
+        AND co.IsActive = 1
+LEFT JOIN Campus c
+    ON cr.CampusId = c.Id
+INNER JOIN PersonAlias pa
+    ON cr.PersonAliasId = pa.Id
+GROUP BY co.Id
+    , co.Name
+    , c.Id
+    , c.Name
+ORDER BY co.Id
+    , c.Id
+
+
+SELECT  pc.NickName
+    , pc.LastName
+    , COUNT(DISTINCT cr.Id) ServeRequests
+    , COUNT(DISTINCT pa.PersonId) UniquePeople
+    , SUM(CASE isnull(cr.ConnectorPersonAliasId,0) WHEN 0 THEN 1 ELSE 0 END) AS UnassignedRequests
+    , SUM(CASE cr.ConnectionState WHEN 0 THEN 1 ELSE 0 END) AS ActiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 1 THEN 1 ELSE 0 END) AS InactiveRequests
+    , SUM(CASE cr.ConnectionState WHEN 2 THEN 1 ELSE 0 END) AS FutureRequests
+    , SUM(CASE cr.ConnectionState WHEN 3 THEN 1 ELSE 0 END) AS ConnectedRequests
+FROM ConnectionRequest cr
+LEFT JOIN PersonAlias pac
+    ON cr.ConnectorPersonAliasId = pac.Id
+INNER JOIN Person pc
+    ON pac.PersonId = pc.Id
+INNER JOIN ConnectionOpportunity co
+    ON cr.ConnectionOpportunityId = co.Id
+        AND cr.CreatedDateTime > '2019-07-20'
+        AND co.ConnectionTypeId = 1
+        AND co.IsActive = 1
+LEFT JOIN Campus c
+    ON cr.CampusId = c.Id
+INNER JOIN PersonAlias pa
+    ON cr.PersonAliasId = pa.Id
+GROUP BY pc.Id
+    , pc.NickName
+    , pc.LastName
+ORDER BY pc.NickName

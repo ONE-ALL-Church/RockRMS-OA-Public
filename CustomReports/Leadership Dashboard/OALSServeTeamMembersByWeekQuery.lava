@@ -1,0 +1,28 @@
+SELECT DISTINCT asd.SundayDate AS [Date]
+FROM AnalyticsSourceDate asd
+WHERE asd.SundayDate >= dateadd(year, - 1, getdate())
+    AND asd.SundayDate <= getdate()
+ORDER By asd.SundayDate
+
+SELECT asd.SundayDate AS [Date]
+    , ISNULL(c.Name,'Central Campus') AS SeriesName
+    , isnull(max(YValue),0) as YValue
+FROM MetricValue AS mv
+INNER JOIN AnalyticsSourceDate asd
+    ON asd.DateKey = mv.MetricValueDateKey
+LEFT JOIN [MetricValuePartition] AS mvpc
+    ON mv.Id = mvpc.MetricValueId
+left JOIN [MetricPartition] AS mpc
+    ON mvpc.MetricPartitionId = mpc.Id
+        AND mpc.EntityTypeId = 67
+left JOIN [Campus] AS C
+    ON mvpc.EntityId = c.Id
+WHERE mv.MetricId = 105
+    AND MetricValueDateTime > dateadd(year, - 1, getdate())
+    AND mv.YValue IS NOT NULL
+    AND mv.YValue != 0
+    AND mv.MetricValueType = 0
+Group By asd.SundayDate
+    , c.Name
+ORDER BY c.Name
+    , asd.SundayDate

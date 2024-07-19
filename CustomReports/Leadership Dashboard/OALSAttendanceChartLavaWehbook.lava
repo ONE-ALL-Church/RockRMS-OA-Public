@@ -1,0 +1,31 @@
+{% sql %}
+    SELECT
+        SUM([MV].[YValue]) AS [Value]
+        , [asd].[SundayDate] AS [DateTime]
+        , [C].[Name] AS [Campus]
+        , [S].[Name] AS [Schedule]
+    FROM [MetricValue] AS [MV]
+    INNER JOIN [Metric] AS [M] ON [M].[Id] = [MV].[MetricId]
+    INNER JOIN [MetricPartition] AS [MPCampus] ON [MPCampus].[MetricId] = [M].[Id]
+    INNER JOIN [EntityType] AS [ETCampus] ON [ETCampus].[Id] = [MPCampus].[EntityTypeId] AND [ETCampus].[Name] = 'Rock.Model.Campus'
+    INNER JOIN [MetricValuePartition] AS [MVCampus] ON [MVCampus].[MetricValueId] = [MV].[Id] AND [MVCampus].[MetricPartitionId] = [MPCampus].[Id]
+    INNER JOIN [Campus] AS [C] ON [C].[Id] = [MVCampus].[EntityId]
+    INNER JOIN [MetricPartition] AS [MPSchedule] ON [MPSchedule].[MetricId] = [M].[Id]
+    INNER JOIN [EntityType] AS [ETSchedule] ON [ETSchedule].[Id] = [MPSchedule].[EntityTypeId] AND [ETSchedule].[Name] = 'Rock.Model.Schedule'
+    INNER JOIN [MetricValuePartition] AS [MVSchedule] ON [MVSchedule].[MetricValueId] = [MV].[Id] AND [MVSchedule].[MetricPartitionId] = [MPSchedule].[Id]
+    INNER JOIN [Schedule] AS [S] ON [S].[Id] = [MVSchedule].[EntityId]
+    LEFT JOIN [dbo].[ufnUtility_CsvToTable]('{{ QueryString.Metric | Replace:"'","''" }}') AS [SSMetric] ON [SSMetric].[item] = [MV].[MetricId]
+    LEFT JOIN [dbo].[ufnUtility_CsvToTable]('{{ QueryString.Campus | Replace:"'","''" }}') AS [SSCampus] ON [SSCampus].[item] = [C].[Id]
+    INNER JOIN AnalyticsSourceDate asd on convert(date,mv.MetricValueDateTime,101) = asd.Date
+    WHERE [MV].[MetricId] IN (7, 6, 8, 10,16,17,18,125)
+      AND (
+         ('{{ QueryString.Metric | Replace:"'","''" }}' = '' AND [MV].[MetricId] NOT IN (10,125,9))
+        OR [SSMetric].[item] IS NOT NULL)
+      AND ('{{ QueryString.Campus | Replace:"'","''" }}' = '' OR [SSCampus].[item] IS NOT NULL)
+      AND [MV].[MetricValueDateTime] > DATEADD(YEAR, -1, GETDATE())
+      AND s.CategoryId IN (171,50,286,326,337,410,712)
+      AND ((asd.EasterWeekIndicator != 1 AND NOT( asd.CalendarMonth = 12 AND asd.DayNumberInCalendarMonth IN (23,24)) AND s.CategoryId NOT IN (337,410))  OR '{{ QueryString.EasterChristmas | Replace:"'","''" }}' = 'include')
+    GROUP BY [asd].[SundayDate],[S].[Name],[C].[Name]
+    ORDER BY [asd].[SundayDate]
+    {% endsql %}
+    {{ results | ToJSON }}

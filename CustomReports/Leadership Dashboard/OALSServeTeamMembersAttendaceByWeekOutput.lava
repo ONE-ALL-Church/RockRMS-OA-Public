@@ -1,0 +1,75 @@
+<div class="chart-container" style="position:relative; width:100%; height:300px; margin-bottom:50px;">
+    <h5>Team Member Attendance by Week</h5>
+    <canvas id="myCharta"></canvas>
+</div>
+
+<script>
+   var ctx = document.getElementById("myCharta").getContext('2d');
+   var config = {
+       type: 'line',
+       data: {
+           labels: [{%-for row in table1.rows -%}"{{row.Date | Date:'MM/dd/yy' }}"{%- if forloop.last-%}{%-else-%},{%-endif-%}{%-endfor-%}],
+           datasets: [
+             {%- for row in table2.rows -%}
+                   {%- if forloop.first -%}
+
+                     {
+                       label: '{{row.SeriesName}}',
+               {%- capture color -%}{%- cycle 'bgc':'#FFC905','#4054D9','#8DC63F','#652D90','#00ADEE','#F15A29','#FF6675','#FFB1BB' -%}{%- endcapture -%}
+                       borderColor: "{{color | UnescapeDataString}}",
+                       backgroundColor: "{{color | UnescapeDataString}}",
+                       borderWidth: 1,
+                       fill:false,
+                       data: [
+                     {%-assign series=row.SeriesName-%}
+                     {%- endif -%}
+                   {%- if series != row.SeriesName -%}
+                       ],
+
+                     },{
+                       label: '{{row.SeriesName}}',
+               {%- capture color -%}{%- cycle 'bgc':'#FFC905','#4054D9','#8DC63F','#652D90','#00ADEE','#F15A29','#FF6675','#FFB1BB' -%}{%- endcapture -%}
+                       borderColor: "{{color | UnescapeDataString}}",
+                       backgroundColor: "{{color | UnescapeDataString}}",
+                       borderWidth: 1,
+                       fill:false,
+                       data: [
+                       {%-assign series=row.SeriesName-%}
+                   {%- endif -%}
+                   {x:'{{row.Date | Date:'MM/dd/yy'}}', y:{{row.YValue}} },
+                   {%- if forloop.last -%}
+                       ],
+                     }]
+                   {%- endif -%}
+               {%- endfor-%}
+             },
+             options: {
+               responsive: true,
+               maintainAspectRatio: false,
+               animation: {
+                   duration: 2500,
+               },
+               plugins: {
+                   tooltip: {
+                       mode: 'index'
+                   }
+               },
+               scales: {
+                   x: {
+                       type: 'time',
+                       time: {
+                           unit:'month',
+                           displayFormats: {
+                               month: 'MM/YY'
+                           },
+                           tooltipFormat: 'MM/DD/YY'
+                       }
+                   },
+                   y: {
+                       beginAtZero: true
+                   }
+               }
+           }
+}
+var Linea = new Chart(ctx, config);
+</script>
