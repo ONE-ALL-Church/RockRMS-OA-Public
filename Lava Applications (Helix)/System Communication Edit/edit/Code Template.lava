@@ -27,12 +27,16 @@
    hx-trigger="click"
    hx-post="^/system-communication/save?systemCommunicationKey={{ QueryString.systemCommunicationKey }}"
    hx-target="#oa-system-communication-edit"
+   hx-include="closest form"
    hx-params="not body"
-   hx-on:htmx:configRequest="
-     var t = document.querySelector('[name=body]');
-     event.detail.parameters['body_b64'] =
-       btoa(unescape(encodeURIComponent(t.value)));
-   ">
+   hx-vals='js:{
+     body_b64: (function () {
+       const el = document.querySelector("[name=body]");
+       const txt = el ? el.value : "";
+       // UTF-8 safe Base64
+       return btoa(String.fromCharCode(...new TextEncoder().encode(txt)));
+     })()
+   }'>
   Save
 </a>
 
