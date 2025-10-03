@@ -1,7 +1,8 @@
 {% assign systemCommunicationId = QueryString.systemCommunicationKey | FromIdHash%} {{systemCommunicationId}}
+{% assign body = Form.body_b64 | FromBase64 %}
 {% modifysystemcommunication id:'{{ systemCommunicationId }}' clientvalidationenabled:'true' %}
     [[ property name:'Subject' isrequired:'true']]{{ Form.subject }}[[ endproperty ]]
-    [[ property name:'Body' isrequired:'true' ]]{{ Form.body }}[[ endproperty ]]
+    [[ property name:'Body' isrequired:'false' ]]{{ body }}[[ endproperty ]]
     [[ property name:'Title' isrequired:'true']]{{ Form.title }}[[ endproperty ]]
 {% endmodifysystemcommunication %}
 
