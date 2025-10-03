@@ -23,18 +23,18 @@
     </div>
     <input type="hidden" name="body_b64" id="body_b64" />
 
-    <a class="btn btn-primary"
-    hx-trigger="click"
-    hx-post="^/system-communication/save?systemCommunicationKey={{ QueryString.systemCommunicationKey }}"
-    hx-target="#oa-system-communication-edit"
-    hx-params="not body"
-    hx-on:htmx:configRequest="
-        var t = document.querySelector('[name=body]');
-        var b64 = btoa(unescape(encodeURIComponent(t.value)));
-        document.getElementById('body_b64').value = b64;
-    ">
-    Save
-    </a>
+<a class="btn btn-primary"
+   hx-trigger="click"
+   hx-post="^/system-communication/save?systemCommunicationKey={{ QueryString.systemCommunicationKey }}"
+   hx-target="#oa-system-communication-edit"
+   hx-params="not body"
+   hx-on:htmx:configRequest="
+     var t = document.querySelector('[name=body]');
+     event.detail.parameters['body_b64'] =
+       btoa(unescape(encodeURIComponent(t.value)));
+   ">
+  Save
+</a>
 
     <a class="btn btn-link"
         hx-get="^/system-communication/list"
