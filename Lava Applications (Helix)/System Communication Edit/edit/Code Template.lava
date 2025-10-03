@@ -1,0 +1,33 @@
+{% assign systemCommunicationId = QueryString.systemCommunicationKey | FromIdHash%}
+{% assign title = '' %}
+{% assign subject = '' %}
+{% assign body =  '' %}
+{% systemcommunication id:'{{systemCommunicationId}}' %}
+    {% assign title = systemcommunication.Title %}
+    {% assign subject = systemcommunication.Subject %}
+    {% assign body = systemcommunication.Body %}
+{% endsystemcommunication %}
+<lava-form>
+    <div class="row">
+        <div class="col-md-6">
+            {[ textbox name:'title' label:'Title' value:'{{ title }}' isrequired:'true' validationmessage:'Please provide a title.']}
+        </div>
+        <div class="col-md-6">
+            {[ textbox name:'subject' label:'Subject' value:'{{ subject}}' isrequired:'true' validationmessage:'Please provide a Subject.']}
+        </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            {[ memo  name:'body' label:'HTML'  rows:'25' value:'{{ body | Escape }}' isrequired:'true' ]}
+        </div>
+    </div>
+
+    <a class="btn btn-primary"
+    	hx-trigger="click"
+        hx-post="^/system-communication/save?systemCommunicationKey={{ QueryString.systemCommunicationKey }}"
+        hx-target="#oa-system-communication-edit">Save</a>
+
+    <a class="btn btn-link"
+        hx-get="^/system-communication/list"
+        hx-target="#oa-system-communication-edit">Cancel</a>
+</lava-form>

@@ -1,0 +1,14 @@
+Name: System Communication Save
+Description:
+
+
+Id: 6
+Guid: b6dd8568-609d-4dfb-8c6a-25becbc2fd09
+IdKey: DnPerReROA
+Created: 10/2/2025 2:20:45 PM - 
+Modified: 10/2/2025 2:47:38 PM - 
+
+Slug: save
+Raw Path: /api/lava-app/v1/system-communication/save
+Security Mode: ApplicationEdit
+Enabled Lava Commands: RockEntity,RockEntityModify

@@ -1,0 +1,14 @@
+Name: System Communications List 
+Description:
+
+
+Id: 1
+Guid: 0a705aff-6633-4620-b136-dba501a9c22d
+IdKey: g4ZBpzl8Dd
+Created: 10/2/2025 12:17:58 PM - 
+Modified: 10/2/2025 2:20:55 PM - 
+
+Slug: list
+Raw Path: /api/lava-app/v1/system-communication/list
+Security Mode: ApplicationView
+Enabled Lava Commands: RockEntity
