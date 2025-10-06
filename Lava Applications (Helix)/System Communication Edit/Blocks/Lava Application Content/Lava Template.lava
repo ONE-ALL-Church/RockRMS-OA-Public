@@ -1,0 +1,9 @@
+<div id="oa-system-communication-edit">
+    {% assign queryKey = 'Global' | PageParameter:'systemCommunicationKey' %}
+    {% if queryKey != empty and queryKey != null and effectiveHxRequest != 'true' %}
+	    {% renderlavaendpoint route:'^/system-communication/edit'  %}
+    {% else %}
+    	{% renderlavaendpoint route:'^/system-communication/list' %}
+    {% endif %}
+
+</div>
