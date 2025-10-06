@@ -1,46 +1,75 @@
-{% assign systemCommunicationId = QueryString.systemCommunicationKey | FromIdHash%}
+{% assign systemCommunicationKey = 'Global' | PageParameter:'systemCommunicationKey' %}
+{% assign systemCommunicationId = systemCommunicationKey | FromIdHash %}
+
+{% assign queryParams = 'Global' | Page:'QueryString' %}
+{% assign currentUrl = QueryString.currentUrl %}
+
 {% assign title = '' %}
 {% assign subject = '' %}
 {% assign body =  '' %}
 {% systemcommunication id:'{{systemCommunicationId}}' %}
+    {% assign hasRightsToEdit = systemcommunication | HasRightsTo:'Edit' %}
+    {% if hasRightsToEdit == false %}
+        <div
+        hx-get="^/system-communication/list"
+        hx-trigger="load"
+        hx-target="#oa-system-communication-edit"
+        hx-vals='js:{ currentUrl: window.location.href }'
+        ></div>
+    {% endif %}
     {% assign title = systemcommunication.Title %}
     {% assign subject = systemcommunication.Subject %}
     {% assign body = systemcommunication.Body %}
 {% endsystemcommunication %}
+
+{% if currentUrl != '' and currentUrl != empty and currentUrl != null %}
+	{% httpresponse %}
+		[[ header key:'HX-Replace-Url' ]]{{ currentUrl| SetUrlParameter:'systemCommunicationKey',systemCommunicationKey  }}[[ endheader ]]
+	{% endhttpresponse %}
+{% endif %}
+
+
 <lava-form>
-    <div class="row">
-        <div class="col-md-6">
-            {[ textbox name:'title' label:'Title' value:'{{ title }}' isrequired:'true' validationmessage:'Please provide a title.']}
-        </div>
-        <div class="col-md-6">
-            {[ textbox name:'subject' label:'Subject' value:'{{ subject}}' isrequired:'true' validationmessage:'Please provide a Subject.']}
-        </div>
+    <div class="panel panel-block">
+		<div class="panel-heading">
+			<h1 class="panel-title"><i class="fa fa-envelope"></i>{{ title }}</h1>
+		</div>
+		<div class="panel-body">
+             <div class="row">
+                <div class="col-md-12">
+                    {[ textbox name:'subject' label:'Subject' value:'{{ subject}}' isrequired:'true' validationmessage:'Please provide a Subject.']}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-12">
+                    {[ memo  name:'body' label:'HTML'  rows:'25' value:'{{ body | Escape }}' isrequired:'true' ]}
+                </div>
+            </div>
+            <input type="hidden" name="body_b64" id="body_b64" />
 
-    <div class="row">
-        <div class="col-md-12">
-            {[ memo  name:'body' label:'HTML'  rows:'25' value:'{{ body | Escape }}' isrequired:'true' ]}
-        </div>
-    </div>
-    <input type="hidden" name="body_b64" id="body_b64" />
+        <a class="btn btn-primary"
+        hx-trigger="click"
+        hx-post="^/system-communication/save?systemCommunicationKey={{ systemCommunicationKey }}"
+        hx-target="#oa-system-communication-edit"
+        hx-include="closest form"
+        hx-params="not body"
+        hx-vals='js:{
+            body_b64: (function () {
+            const el = document.querySelector("[name=body]");
+            const txt = el ? el.value : "";
+            // UTF-8 safe Base64
+            return btoa(String.fromCharCode(...new TextEncoder().encode(txt)));
+            })(),
+            currentUrl: window.location.href
+        }'>
+        Save
+        </a>
 
-<a class="btn btn-primary"
-   hx-trigger="click"
-   hx-post="^/system-communication/save?systemCommunicationKey={{ QueryString.systemCommunicationKey }}"
-   hx-target="#oa-system-communication-edit"
-   hx-include="closest form"
-   hx-params="not body"
-   hx-vals='js:{
-     body_b64: (function () {
-       const el = document.querySelector("[name=body]");
-       const txt = el ? el.value : "";
-       // UTF-8 safe Base64
-       return btoa(String.fromCharCode(...new TextEncoder().encode(txt)));
-     })()
-   }'>
-  Save
-</a>
-
-    <a class="btn btn-link"
-        hx-get="^/system-communication/list"
-        hx-target="#oa-system-communication-edit">Cancel</a>
+            <a class="btn btn-link"
+                hx-get="^/system-communication/list"
+                hx-target="#oa-system-communication-edit"
+                hx-push-url="false"
+                hx-vals='js:{ currentUrl: window.location.href }'>Cancel</a>
+                </div>
+            </div>
 </lava-form>

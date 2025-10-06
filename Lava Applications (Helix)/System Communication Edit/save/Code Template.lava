@@ -1,54 +1,30 @@
-{% assign systemCommunicationId = QueryString.systemCommunicationKey | FromIdHash%} {{systemCommunicationId}}
-{% assign body = Form.body_b64 | FromBase64 %}
+{% assign queryParams = 'Global' | Page:'QueryString' %}
+{% assign systemCommunicationKey = 'Global' | PageParameter:'systemCommunicationKey' %}
+
+{% assign systemCommunicationId = systemCommunicationKey | FromIdHash %}
+{%- assign body = Form.body_b64 | FromBase64:true -%}
 {% modifysystemcommunication id:'{{ systemCommunicationId }}' clientvalidationenabled:'true' %}
     [[ property name:'Subject' isrequired:'true']]{{ Form.subject }}[[ endproperty ]]
-    [[ property name:'Body' isrequired:'true' ]]{{ body }}[[ endproperty ]]
-    [[ property name:'Title' isrequired:'true']]{{ Form.title }}[[ endproperty ]]
+    [[ property name:'Body' isrequired:'true' injectionpreventionenabled:'false' ]]{{ body }}[[ endproperty ]]
 {% endmodifysystemcommunication %}
 
 
+{% if ModifyResult.Success == false %}
+    <div class="alert alert-warning">
+        <strong>{{ ModifyResult.ErrorMessage }}</strong><br>
+        Validation Messages<br>
+        <ul>
+        {% for message in ModifyResult.ValidationErrors %}
+            <li>{{ message.ErrorMessage }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+{% else %}
+<div
+		hx-get="^/system-communication/list"
+		hx-trigger="load"
+		hx-target="#oa-system-communication-edit"
+		hx-vals='js:{ currentUrl: window.location.href }'
+		></div>
+{% endif %}
 
-<div class="panel panel-block">
-	<div class="panel-heading">
-		<h1 class="panel-title"><i class="fa fa-envelope"></i> System Communication List</h1>
-	</div>
-	<div class="panel-body">
-
-		<div class="grid grid-panel">
-			<div class="table-responsive">
-				<table class="grid-table table table-bordered table-striped table-hover"
-					id="ctl00_main_ctl35_ctl01_ctl06_gEmailTemplates">
-					<thead>
-						<tr align="left" data-original-title="" title="">
-							<th data-priority="1" scope="col">Title</th>
-							<th data-priority="1" scope="col">Subject</th>
-							<th data-priority="1" scope="col">Category</th>
-							<th data-priority="1" scope="col">From Address</th>
-							<th align="center" data-priority="1" scope="col">Active</th>
-						</tr>
-					</thead>
-					<tbody>
-						{% systemcommunication where:'IsActive == "True"' %}
-						{% for systemcommuniaction in systemcommunicationItems %}
-						<tr align="left" data-row-index="0" datakey="76" data-original-title="" title="">
-							<td class="grid-select-cell" data-priority="1">{{ systemcommuniaction.Title }}</td>
-							<td class="grid-select-cell" data-priority="1">{{ systemcommuniaction.Subject }}</td>
-							<td class="grid-select-cell" data-priority="1">{{ systemcommuniaction.Category.Name }}</td>
-							<td class="grid-select-cell" data-priority="1">{{ systemcommuniaction.From }}</td>
-							<td class="grid-select-cell grid-bool-field" align="center" data-priority="1">
-								{% if systemcommuniaction.IsActive == "True" %}<i class="fa fa-check"></i>{% endif %}</td>
-							<td class="grid-select-cell grid-columncommand" data-priority="1"><a href="/admin/communications/system/preview/?SystemCommunicationId={{ systemcommuniaction.Id }}" title="Preview" class="btn btn-default btn-sm"><i class="fa fa-search"></i></a></td>
-							<td class="grid-select-cell grid-columncommand" data-priority="1">
-								<a class="btn btn-default btn-sm"
-									hx-get="^/system-communication/edit?systemCommunicationKey={{ systemcommuniaction.IdKey }}"
-									hx-target="#oa-system-communication-edit" title="Edit" ><i class="fa fa-pencil"></i></a></td>
-						</tr>
-						{% endfor %}
-						{% endsystemcommunication %}
-					</tbody>
-				</table>
-			</div>
-		</div>
-
-	</div>
-</div>
