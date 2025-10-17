@@ -1,0 +1,173 @@
+{%- assign systemCommunicationKey = 'Global' | PageParameter:'systemCommunicationKey' -%}
+{%- assign systemCommunicationId = systemCommunicationKey | FromIdHash -%}
+{%- assign personFound = false -%}
+{%- assign actionFound = false -%}
+{%- systemcommunication id:'{{systemCommunicationId}}' -%}
+    {%- assign hasRightsToEdit = systemcommunication | HasRightsTo:'Edit' -%}
+    {%- if hasRightsToEdit == false -%}
+        Error
+    {%- else -%}
+        {%- if Form.body_b64 != empty and Form.body_b64 != null -%}
+            {%- assign bodyFromForm = Form.body_b64 | FromBase64:true -%}
+        {%- endif -%}
+        {%- capture body -%}
+
+                {%- assign Workflow = systemcommunication | Attribute:'PreviewWorkflowContext', 'Object' -%}
+                    {%- if Workflow != null and Workflow != empty -%}
+
+                        {%- sql -%}
+                            DECLARE @EntityTypeId INT = (SELECT TOP 1 Id FROM EntityType WHERE [Name] = 'Rock.Model.WorkflowActionType')
+                            DECLARE @FieldTypeId INT = (SELECT TOP 1 Id FROM FieldType WHERE [Class] = 'Rock.Field.Types.SystemCommunicationFieldType')
+                            DECLARE @SystemCommunicationGuid VARCHAR(50) = '{{systemcommunication.Guid}}'
+                            DECLARE @WorkflowId INT = {{Workflow.Id}}
+
+                            SELECT wa.Id, avPersonAttribute.ValueAsPersonId
+                            FROM AttributeValue av
+                            INNER JOIN Attribute a ON av.AttributeId = a.Id AND a.FieldTypeId = @FieldTypeId AND a.EntityTypeId = @EntityTypeId
+                            INNER JOIN WorkflowActionType wat ON av.EntityId = wat.Id
+                            INNER JOIN WorkflowAction wa ON wat.Id = wa.ActionTypeId
+                            INNER JOIN WorkflowActivity waa ON wa.ActivityId = waa.Id
+                            INNER JOIN Workflow w ON waa.WorkflowId = w.Id
+                            OUTER APPLY (
+                                SELECT TOP 1  avPersonAttribute.ValueAsPersonId, aActionPersonIdentifier.Name
+                                FROM AttributeValue avActionPersonIdentifier
+                                INNER JOIN Attribute aActionPersonIdentifier ON avActionPersonIdentifier.AttributeId = aActionPersonIdentifier.Id AND aActionPersonIdentifier.[Key] = 'Recipient'
+                                INNER JOIN FieldType ft ON aActionPersonIdentifier.FieldTypeId = ft.Id
+                                    AND (ft.Class = 'Rock.Field.Types.WorkflowAttributeFieldType'
+                                    OR ft.Class = 'Rock.Field.Types.WorkflowTextOrAttributeFieldType')
+                            INNER JOIN Attribute aPersonAttribute ON TRY_CAST(aPersonAttribute.Guid AS VARCHAR(50)) = avActionPersonIdentifier.[Value]
+                            INNER JOIN AttributeValue avPersonAttribute ON avPersonAttribute.AttributeId = aPersonAttribute.Id AND avPersonAttribute.EntityId = @WorkflowId
+                                WHERE avActionPersonIdentifier.EntityId = wat.Id
+                                ) AS avPersonAttribute
+                            WHERE av.[Value] = @SystemCommunicationGuid AND w.Id = @WorkflowId
+                        {%- endsql -%}
+                    {%- else -%}
+                         {%- sql -%}
+                            DECLARE @EntityTypeId INT = (SELECT TOP 1 Id FROM EntityType WHERE [Name] = 'Rock.Model.WorkflowActionType')
+                            DECLARE @FieldTypeId INT = (SELECT TOP 1 Id FROM FieldType WHERE [Class] = 'Rock.Field.Types.SystemCommunicationFieldType')
+                            DECLARE @SystemCommunicationGuid VARCHAR(50) = '{{systemcommunication.Guid}}'
+
+                            SELECT TOP 1 wa.Id, avPersonAttribute.ValueAsPersonId
+                            FROM AttributeValue av
+                            INNER JOIN Attribute a ON av.AttributeId = a.Id AND a.FieldTypeId = @FieldTypeId AND a.EntityTypeId = @EntityTypeId
+                            INNER JOIN WorkflowActionType wat ON av.EntityId = wat.Id
+                            INNER JOIN WorkflowAction wa ON wat.Id = wa.ActionTypeId
+                            INNER JOIN WorkflowActivity waa ON wa.ActivityId = waa.Id
+                            INNER JOIN Workflow w ON waa.WorkflowId = w.Id
+                            OUTER APPLY (
+                                SELECT TOP 1  avPersonAttribute.ValueAsPersonId, aActionPersonIdentifier.Name
+                                FROM AttributeValue avActionPersonIdentifier
+                                INNER JOIN Attribute aActionPersonIdentifier ON avActionPersonIdentifier.AttributeId = aActionPersonIdentifier.Id AND aActionPersonIdentifier.[Key] = 'Recipient'
+                                INNER JOIN FieldType ft ON aActionPersonIdentifier.FieldTypeId = ft.Id
+                                    AND (ft.Class = 'Rock.Field.Types.WorkflowAttributeFieldType'
+                                    OR ft.Class = 'Rock.Field.Types.WorkflowTextOrAttributeFieldType')
+                            INNER JOIN Attribute aPersonAttribute ON TRY_CAST(aPersonAttribute.Guid AS VARCHAR(50)) = avActionPersonIdentifier.[Value]
+                            INNER JOIN AttributeValue avPersonAttribute ON avPersonAttribute.AttributeId = aPersonAttribute.Id
+                                WHERE avActionPersonIdentifier.EntityId = wat.Id
+                                ) AS avPersonAttribute
+                            WHERE av.[Value] = @SystemCommunicationGuid
+                            ORDER BY CASE WHEN avPersonAttribute.ValueAsPersonId IS NULL THEN 1 ELSE 0 END, w.Id DESC
+                        {%- endsql -%}
+                    {%- endif -%}
+                        {%- raw -%}
+                            {%- assign Action = '' -%}
+                            {%- assign Workflow = '' -%}
+                            {%- assign Activity = '' -%}
+                        {%- endraw -%}
+                        {%- for result in results -%}
+                            {%- if result.Id != null and result.Id != empty -%}
+                                {% assign actionFound = true %}
+                                {%- raw -%}{%- workflowaction id:'{%- endraw -%}{{result.Id}}{%- raw -%}' -%}
+                                {%- assign Action = workflowaction -%}
+                                {%- assign Workflow = workflowaction.Activity.Workflow -%}
+                                {%- endworkflowaction -%}{%- endraw -%}
+
+                                {%- if result.ValueAsPersonId != null and result.ValueAsPersonId != empty -%}
+                                    {% assign personFound = true %}
+                                    {%- raw -%}{%- person id:'{%- endraw -%}{{result.ValueAsPersonId}}{%- raw -%}' -%}
+                                    {%- assign Person = person -%}
+                                    {%- endperson -%}{%- endraw -%}
+                                {%- endif -%}
+                                {%- break -%}
+                            {%- endif -%}
+                        {%- endfor -%}
+                        {%- for result in results -%}
+
+                         {%- endfor -%}
+
+
+            {%- if personFound == false -%}
+                {%- raw -%}{%- assign Person = CurrentPerson -%}{%- endraw -%}
+            {%- endif -%}
+
+            {{ bodyFromForm }}
+        {%- endcapture -%}
+
+        <lava-form>
+            <div class="row" style="display: none;">
+                <div class="panel-body">
+                    <input type="hidden" name="previewbody" id="body" value="{{ body | UrlEncode }}" />
+                    <input type="hidden" name="body_b64" id="body_b64" />
+                    <input type="hidden" name="systemCommunicationKey" id="systemCommunicationKey" value="{{ systemCommunicationKey }}" />
+                </div>
+                <div
+                hx-trigger="load"
+                    hx-post="^/system-communication/preview-render?systemCommunicationKey={{ systemCommunicationKey }}"
+                    hx-target="#oa-preview-render"
+                    hx-include="closest form"
+                    hx-params="not body"
+                    hx-vals='js:{
+                        body_b64: (function () {
+                        const el = document.querySelector("[name=previewbody]");
+                        const txt = el ? el.value : "";
+                        // UTF-8 safe Base64
+                        return btoa(String.fromCharCode(...new TextEncoder().encode(txt)));
+                        })()
+                    }'></div>
+            </div>
+
+       </lava-form>
+
+        <div style="background: #f8f9fa; padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 1rem; border: 1px solid #dee2e6;">
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <span style="font-weight: 600; color: #495057; font-size: 0.875rem;">Preview Context:</span>
+
+                {% if actionFound %}
+                    {%- if Workflow != null and Workflow != empty -%}
+                        <span style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #d4edda; color: #155724; border-radius: 20px; font-size: 0.8125rem; font-weight: 500;">
+                            <i class="fa fa-check-circle" style="margin-right: 0.4rem;"></i>
+                            Workflow Set
+                        </span>
+                    {% else %}
+                        <span style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #d4edda; color: #155724; border-radius: 20px; font-size: 0.8125rem; font-weight: 500;">
+                            <i class="fa fa-check-circle" style="margin-right: 0.4rem;"></i>
+                            Workflow Found
+                        </span>
+                    {% endif %}
+                {% else %}
+                    <span style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #fff3cd; color: #856404; border-radius: 20px; font-size: 0.8125rem; font-weight: 500;">
+                        <i class="fa fa-exclamation-triangle" style="margin-right: 0.4rem;"></i>
+                        No Workflow
+                    </span>
+                {% endif %}
+
+                {% if personFound %}
+                    <span style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #d1ecf1; color: #0c5460; border-radius: 20px; font-size: 0.8125rem; font-weight: 500;">
+                        <i class="fa fa-user-circle" style="margin-right: 0.4rem;"></i>
+                        Recipient Found
+                    </span>
+                {% else %}
+                    <span style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #fff3cd; color: #856404; border-radius: 20px; font-size: 0.8125rem; font-weight: 500;">
+                        <i class="fa fa-user" style="margin-right: 0.4rem;"></i>
+                        Using {{ CurrentPerson.FullName }}
+                    </span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div id="oa-preview-render">
+        </div>
+    {%- endif -%}
+{%- endsystemcommunication -%}
+
+

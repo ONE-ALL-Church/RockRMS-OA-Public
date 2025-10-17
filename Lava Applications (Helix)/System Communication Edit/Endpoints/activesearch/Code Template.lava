@@ -1,0 +1,22 @@
+{% systemcommunication expression:'Title.Contains("{{ Form.q }}") || Subject.Contains("{{ Form.q }}") || Body.Contains("{{ Form.q }}") || From.Contains("{{ Form.q }}")  || FromName.Contains("{{ Form.q }}") || Category.Name.Contains("{{ Form.q }}")' sort:'Title' disableattributeprefetch:'true' %}
+								{% for systemcommunication in systemcommunicationItems %}
+									{% assign hasRightsToEdit = systemcommunication | HasRightsTo:'Edit' %}
+									{% if hasRightsToEdit == false %}
+										{% continue %}
+									{% endif %}
+									<tr align="left" data-row-index="0" datakey="76" data-original-title="" title=""
+										hx-get="^/system-communication/edit?systemCommunicationKey={{ systemcommunication.IdKey | UrlEncode }}"
+											hx-target="#oa-system-communication-edit"
+											hx-vals='js:{ currentUrl: window.location.href }'
+											title="Edit">
+										<td class="grid-select-cell" data-priority="1">{{ systemcommunication.Title }}</td>
+										<td class="grid-select-cell" data-priority="1">{{ systemcommunication.Subject }}</td>
+										<td class="grid-select-cell" data-priority="1">{{ systemcommunication.Category.Name }}</td>
+										<td class="grid-select-cell" data-priority="1">{{ systemcommunication.FromName }}</td>
+                                        <td class="grid-select-cell" data-priority="1">{{ systemcommunication.From }}</td>
+										<td class="grid-select-cell grid-columncommand" data-priority="1">
+										<a class="btn btn-default btn-sm"
+										><i class="fa fa-pencil"></i></a></td>
+									</tr>
+								{% endfor %}
+								{% endsystemcommunication %}

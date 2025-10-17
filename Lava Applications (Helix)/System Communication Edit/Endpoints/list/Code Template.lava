@@ -1,9 +1,18 @@
 {% assign queryParams = 'Global' | Page:'QueryString' %}
 {% assign currentUrl = QueryString.currentUrl %}
+{{ 'Global' | Page:'Url' }}
+<script>
+document.body.addEventListener('htmx:configRequest', function (event) {
+    console.log('All request details:', event.detail);
+});
 
+</script>
 {% if currentUrl != '' and currentUrl != empty and currentUrl != null %}
 	{% httpresponse %}
-		[[ header key:'HX-Replace-Url' ]]{{ currentUrl| SetUrlParameter:'systemCommunicationKey',''  }}[[ endheader ]]
+		[[ header key:'HX-Push-Url' ]]{{ currentUrl| SetUrlParameter:'systemCommunicationKey',''  }}[[ endheader ]]
+	{% endhttpresponse %}
+	{% httpresponse %}
+			[[ header key:'HX-Replace-Url' ]]{{ currentUrl| SetUrlParameter:'systemCommunicationKey',''  }}[[ endheader ]]
 	{% endhttpresponse %}
 {% endif %}
 
@@ -11,47 +20,36 @@
 		<div class="panel-heading">
 			<h1 class="panel-title"><i class="fa fa-envelope"></i> System Communication List</h1>
 		</div>
-		<div class="panel-body">
+		<div class="well p-3">
+		<input class="form-control"
+				name="q" placeholder="Search by name, title, subject, category, from address or email body"
+				hx-post="^/system-communication/activesearch"
+				hx-trigger="input changed delay:500ms, search"
+				hx-target="#systemcommunications">
+		</div>
 
-			<div class="grid grid-panel">
-				<div class="table-responsive">
-					<table class="grid-table table table-bordered table-striped table-hover"
-						id="ctl00_main_ctl35_ctl01_ctl06_gEmailTemplates">
-						<thead>
-							<tr align="left" data-original-title="" title="">
-								<th data-priority="1" scope="col">Title</th>
-								<th data-priority="1" scope="col">Subject</th>
-								<th data-priority="1" scope="col">Category</th>
-								<th data-priority="1" scope="col">From Address</th>
-							</tr>
-						</thead>
-						<tbody>
-							{% systemcommunication where:'IsActive == "True"' sort:'ModifiedDateTime desc' %}
-							{% for systemcommunication in systemcommunicationItems %}
-								{% assign hasRightsToEdit = systemcommunication | HasRightsTo:'Edit' %}
-								{% if hasRightsToEdit == false %}
-									{% continue %}
-								{% endif %}
-								<tr align="left" data-row-index="0" datakey="76" data-original-title="" title="">
-									<td class="grid-select-cell" data-priority="1">{{ systemcommunication.Title }}</td>
-									<td class="grid-select-cell" data-priority="1">{{ systemcommunication.Subject }}</td>
-									<td class="grid-select-cell" data-priority="1">{{ systemcommunication.Category.Name }}</td>
-									<td class="grid-select-cell" data-priority="1">{{ systemcommunication.From }}</td>
-									<td class="grid-select-cell grid-columncommand" data-priority="1"><a href="/admin/communications/system/preview/?SystemCommunicationId={{ systemcommuniaction.Id }}" title="Preview" class="btn btn-default btn-sm"><i class="fa fa-search"></i></a></td>
-									<td class="grid-select-cell grid-columncommand" data-priority="1">
-									<a class="btn btn-default btn-sm"
-										hx-get="^/system-communication/edit?systemCommunicationKey={{ systemcommunication.IdKey | UrlEncode }}"
-										hx-target="#oa-system-communication-edit"
-										hx-vals='js:{ currentUrl: window.location.href }'
-										title="Edit" ><i class="fa fa-pencil"></i></a></td>
+			<div class="panel-body">
+				<div class="grid grid-panel">
+					<div class="table-responsive">
+						<table class="grid-table table table-bordered table-striped table-hover"
+							id="ctl00_main_ctl35_ctl01_ctl06_gEmailTemplates">
+							<thead>
+								<tr align="left" data-original-title="" title="">
+									<th data-priority="1" scope="col">Title</th>
+									<th data-priority="1" scope="col">Subject</th>
+									<th data-priority="1" scope="col">Category</th>
+									<th data-priority="1" scope="col">From Name</th>
+									<th data-priority="1" scope="col">From Address</th>
 								</tr>
-							{% endfor %}
-							{% endsystemcommunication %}
-						</tbody>
-					</table>
+							</thead>
+							<tbody id="systemcommunications">
+								{% renderlavaendpoint route:'^/system-communication/activesearch' method:'post' %}
+							</tbody>
+						</table>
+					</div>
 				</div>
+
 			</div>
 
-		</div>
 	</div>
 

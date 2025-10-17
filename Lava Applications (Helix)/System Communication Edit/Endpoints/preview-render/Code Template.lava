@@ -1,0 +1,14 @@
+{% assign systemCommunicationKey = 'Global' | PageParameter:'systemCommunicationKey' %}
+{% assign systemCommunicationId = systemCommunicationKey | FromIdHash %}
+{% systemcommunication id:'{{systemCommunicationId}}' %}
+    {% assign hasRightsToEdit = systemcommunication | HasRightsTo:'Edit' %}
+    {% if hasRightsToEdit == false %}
+        Error
+    {% else %}
+        {% if Form.body_b64 != empty and Form.body_b64 != null %}
+            {%- assign bodyFromForm = Form.body_b64 | FromBase64:true -%}
+        {% endif %}
+        {% assign Workflow = systemcommunication | Attribute:'PreviewWorkflowContext', 'Object' %}
+        {{ bodyFromForm | UrlDecode | RunLava | RunLava }}
+    {% endif %}
+{% endsystemcommunication %}

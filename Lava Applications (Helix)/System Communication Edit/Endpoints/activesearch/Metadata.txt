@@ -1,0 +1,14 @@
+Name: Systems Communication Active Search
+Description:
+
+
+Id: 9
+Guid: ab5dca12-935a-4338-a3a8-9ccc9d89c957
+IdKey: N1gJM0BWo0
+Created: 10/16/2025 12:15:08 PM - 
+Modified: 10/16/2025 1:22:00 PM - 
+
+Slug: activesearch
+Raw Path: /api/lava-app/v1/system-communication/activesearch
+Security Mode: ApplicationView
+Enabled Lava Commands: RockEntity

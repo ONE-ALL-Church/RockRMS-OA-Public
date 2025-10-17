@@ -1,75 +1,134 @@
 {% assign systemCommunicationKey = 'Global' | PageParameter:'systemCommunicationKey' %}
 {% assign systemCommunicationId = systemCommunicationKey | FromIdHash %}
 
+{% capture htmlFieldAdditionalAttributes %}
+    hx-trigger="input changed delay:500ms, search"
+    hx-post="^/system-communication/preview?systemCommunicationKey={{ systemCommunicationKey }}"
+    hx-target="#oa-preview"
+    hx-include="closest form"
+    hx-params="not body"
+    hx-vals='js:{
+        body_b64: (function () {
+            const el = document.querySelector("[name=body]");
+            const txt = el ? el.value : "";
+            return btoa(String.fromCharCode(...new TextEncoder().encode(txt)));
+        })()
+    }'
+{% endcapture %}
+
 {% assign queryParams = 'Global' | Page:'QueryString' %}
 {% assign currentUrl = QueryString.currentUrl %}
-
 {% assign title = '' %}
 {% assign subject = '' %}
-{% assign body =  '' %}
+{% assign body = '' %}
+
 {% systemcommunication id:'{{systemCommunicationId}}' %}
     {% assign hasRightsToEdit = systemcommunication | HasRightsTo:'Edit' %}
     {% if hasRightsToEdit == false %}
         <div
-        hx-get="^/system-communication/list"
-        hx-trigger="load"
-        hx-target="#oa-system-communication-edit"
-        hx-vals='js:{ currentUrl: window.location.href }'
-        ></div>
+            hx-get="^/system-communication/list"
+            hx-trigger="load"
+            hx-target="#oa-system-communication-edit"
+            hx-vals='js:{ currentUrl: window.location.href }'>
+        </div>
     {% endif %}
+
     {% assign title = systemcommunication.Title %}
     {% assign subject = systemcommunication.Subject %}
-    {% assign body = systemcommunication.Body %}
+
+    {% if Form.body_b64 != empty and Form.body_b64 != null %}
+        {%- assign bodyFromForm = Form.body_b64 | FromBase64:true -%}
+    {% endif %}
+
+    {% if bodyFromForm != empty and bodyFromForm != null %}
+        {% assign body = bodyFromForm %}
+    {% else %}
+        {% assign body = systemcommunication.Body %}
+    {% endif %}
 {% endsystemcommunication %}
 
 {% if currentUrl != '' and currentUrl != empty and currentUrl != null %}
-	{% httpresponse %}
-		[[ header key:'HX-Replace-Url' ]]{{ currentUrl| SetUrlParameter:'systemCommunicationKey',systemCommunicationKey  }}[[ endheader ]]
-	{% endhttpresponse %}
+    {% httpresponse %}
+        [[ header key:'HX-Push-Url' ]]{{ currentUrl | SetUrlParameter:'systemCommunicationKey',systemCommunicationKey }}[[ endheader ]]
+    {% endhttpresponse %}
+    {% httpresponse %}
+        [[ header key:'HX-Replace-Url' ]]{{ currentUrl | SetUrlParameter:'systemCommunicationKey',systemCommunicationKey }}[[ endheader ]]
+    {% endhttpresponse %}
 {% endif %}
 
-
 <lava-form>
-    <div class="panel panel-block">
-		<div class="panel-heading">
-			<h1 class="panel-title"><i class="fa fa-envelope"></i>{{ title }}</h1>
-		</div>
-		<div class="panel-body">
-             <div class="row">
-                <div class="col-md-12">
-                    {[ textbox name:'subject' label:'Subject' value:'{{ subject}}' isrequired:'true' validationmessage:'Please provide a Subject.']}
+    <div class="row">
+        <div class="col-md-6">
+            <div class="panel panel-block">
+                <div class="panel-heading">
+                    <h1 class="panel-title"><i class="fa fa-envelope"></i> {{ title }}</h1>
                 </div>
-            </div>
-            <div class="row">
-                <div class="col-md-12">
-                    {[ memo  name:'body' label:'HTML'  rows:'25' value:'{{ body | Escape }}' isrequired:'true' ]}
-                </div>
-            </div>
-            <input type="hidden" name="body_b64" id="body_b64" />
+                <div class="panel-body">
+                    <div class="row">
+                        <div class="col-md-12">
+                            {[ textbox name:'subject' label:'Subject' value:'{{ subject | Escape }}' isrequired:'true' validationmessage:'Please provide a Subject.' ]}
+                        </div>
+                    </div>
 
-        <a class="btn btn-primary"
-        hx-trigger="click"
-        hx-post="^/system-communication/save?systemCommunicationKey={{ systemCommunicationKey }}"
-        hx-target="#oa-system-communication-edit"
-        hx-include="closest form"
-        hx-params="not body"
-        hx-vals='js:{
-            body_b64: (function () {
-            const el = document.querySelector("[name=body]");
-            const txt = el ? el.value : "";
-            // UTF-8 safe Base64
-            return btoa(String.fromCharCode(...new TextEncoder().encode(txt)));
-            })(),
-            currentUrl: window.location.href
-        }'>
-        Save
-        </a>
+                    <div class="row">
+                        <div class="col-md-12">
+                            {[ rockcontrol id:'rc-{{ '' | UniqueIdentifier }}' label:'HTML' showlabel:'true' controltype:'rock-text-box' isrequired:'true' validationmessage:'' ]}
+                                <textarea name="body" rows="25" id="{{ id }}" class="form-control" {{ htmlFieldAdditionalAttributes }}>{{ body | Escape }}</textarea>
+                            {[ endrockcontrol ]}
+                        </div>
+                    </div>
 
-            <a class="btn btn-link"
-                hx-get="^/system-communication/list"
-                hx-target="#oa-system-communication-edit"
-                hx-push-url="false"
-                hx-vals='js:{ currentUrl: window.location.href }'>Cancel</a>
+                    <input type="hidden" name="body_b64" id="body_b64" />
+                    <input type="hidden" name="systemCommunicationKey" id="systemCommunicationKey" value="{{ systemCommunicationKey }}" />
+
+                    <a class="btn btn-primary"
+                        hx-trigger="click"
+                        hx-post="^/system-communication/save?systemCommunicationKey={{ systemCommunicationKey }}"
+                        hx-target="#oa-system-communication-edit"
+                        hx-include="closest form"
+                        hx-params="not body"
+                        hx-vals='js:{
+                            body_b64: (function () {
+                                const el = document.querySelector("[name=body]");
+                                const txt = el ? el.value : "";
+                                return btoa(String.fromCharCode(...new TextEncoder().encode(txt)));
+                            })(),
+                            currentUrl: window.location.href
+                        }'>
+                        Save
+                    </a>
+
+                    <a class="btn btn-default"
+                        hx-get="^/system-communication/list"
+                        hx-target="#oa-system-communication-edit"
+                        hx-push-url="false"
+                        hx-vals='js:{ currentUrl: window.location.href }'>
+                        Cancel
+                    </a>
                 </div>
             </div>
+        </div>
+
+        <div class="col-md-6"
+            hx-trigger="load"
+            hx-post="^/system-communication/preview?systemCommunicationKey={{ systemCommunicationKey }}"
+            hx-target="#oa-preview"
+            hx-include="closest form"
+            hx-params="not body"
+            hx-vals='js:{
+                body_b64: (function () {
+                    const el = document.querySelector("[name=body]");
+                    const txt = el ? el.value : "";
+                    return btoa(String.fromCharCode(...new TextEncoder().encode(txt)));
+                })()
+            }'>
+            <div class="panel panel-block">
+                <div class="panel-body">
+                    <div class="row">
+                        <div id="oa-preview" class="col-md-12"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </lava-form>

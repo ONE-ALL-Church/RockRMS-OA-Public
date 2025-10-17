@@ -1,0 +1,14 @@
+Name: System Communications Preview
+Description:
+
+
+Id: 7
+Guid: 23fe1b2e-9072-45c1-a667-1c426c9edd8e
+IdKey: NqLBZme8wv
+Created: 10/15/2025 3:45:47 PM - 
+Modified: 10/17/2025 11:25:26 AM - 
+
+Slug: preview
+Raw Path: /api/lava-app/v1/system-communication/preview
+Security Mode: ApplicationView
+Enabled Lava Commands: RockEntity,Sql
