@@ -1,12 +1,7 @@
 {% assign queryParams = 'Global' | Page:'QueryString' %}
 {% assign currentUrl = QueryString.currentUrl %}
 {{ 'Global' | Page:'Url' }}
-<script>
-document.body.addEventListener('htmx:configRequest', function (event) {
-    console.log('All request details:', event.detail);
-});
 
-</script>
 {% if currentUrl != '' and currentUrl != empty and currentUrl != null %}
 	{% httpresponse %}
 		[[ header key:'HX-Push-Url' ]]{{ currentUrl| SetUrlParameter:'systemCommunicationKey',''  }}[[ endheader ]]
