@@ -1,6 +1,5 @@
 {% assign queryParams = 'Global' | Page:'QueryString' %}
 {% assign currentUrl = QueryString.currentUrl %}
-{{ 'Global' | Page:'Url' }}
 
 {% if currentUrl != '' and currentUrl != empty and currentUrl != null %}
 	{% httpresponse %}
