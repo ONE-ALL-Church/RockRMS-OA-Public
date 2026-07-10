@@ -1,0 +1,9 @@
+{
+  "registrationInstanceId": 0,
+  "groupTypeIds": "",
+  "groupAttributeKeys": {
+    "cabin": "Cabin",
+    "bus": "BusNumber",
+    "color": "Color"
+  }
+}

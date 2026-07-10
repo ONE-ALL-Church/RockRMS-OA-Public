@@ -1,0 +1,18 @@
+{
+  "schema": "rock-kb-external-recipe-v1",
+  "recipe_id": "oneall:check-in-status-dashboard",
+  "org_id": "oneall",
+  "title": "Check-In Status Dashboard",
+  "summary": "Build a read-only Helix dashboard that combines registration, group-only placement, and latest check-in attendance without publishing instance-specific configuration or sensitive details.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "entrypoint": "src/roster-status.lava",
+  "concept_ids": ["check-in", "event-registration", "lava"],
+  "source_ref": "main",
+  "files": [
+    "README.md",
+    "LICENSE",
+    "config/configuration.example.json",
+    "src/roster-status.lava"
+  ]
+}
