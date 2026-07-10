@@ -1,0 +1,187 @@
+{% comment %}
+  Read-only reference pattern. Configure registrationInstanceId and groupTypeIds
+  in Lava Application rigging. Do not add write commands to this endpoint.
+{% endcomment %}
+{% assign registrationInstanceId = ConfigurationRigging.registrationInstanceId | AsInteger %}
+{% assign groupTypeIds = ConfigurationRigging.groupTypeIds | Remove:' ' %}
+{% assign checkinDate = QueryString.date | Default:'Now' | Date:'yyyy-MM-dd' %}
+{% assign statusFilter = QueryString.status | Default:'all' | Downcase | SanitizeSql %}
+{% assign searchText = QueryString.q | Default:'' | Trim | SanitizeSql %}
+{% assign sortKey = QueryString.sort | Default:'status' | Downcase | SanitizeSql %}
+{% assign sortDirection = QueryString.dir | Default:'asc' | Downcase | SanitizeSql %}
+{% assign cabinKey = ConfigurationRigging.groupAttributeKeys.cabin | Default:'Cabin' %}
+{% assign busKey = ConfigurationRigging.groupAttributeKeys.bus | Default:'BusNumber' %}
+{% assign colorKey = ConfigurationRigging.groupAttributeKeys.color | Default:'Color' %}
+
+{% if registrationInstanceId <= 0 or groupTypeIds == empty %}
+  <div class="alert alert-warning">Configure a registration instance and one or more group type IDs.</div>
+{% else %}
+{% sql return:'rosterRows' registrationInstanceId:'{{ registrationInstanceId }}' checkinDate:'{{ checkinDate }}' statusFilter:'{{ statusFilter }}' searchText:'{{ searchText }}' sortKey:'{{ sortKey }}' sortDirection:'{{ sortDirection }}' cabinKey:'{{ cabinKey }}' busKey:'{{ busKey }}' colorKey:'{{ colorKey }}' %}
+DECLARE @RegistrationInstanceId int = TRY_CONVERT(int, @registrationInstanceId);
+DECLARE @CheckinDate date = COALESCE(TRY_CONVERT(date, @checkinDate), CONVERT(date, GETDATE()));
+DECLARE @StatusFilter nvarchar(40) = LOWER(NULLIF(LTRIM(RTRIM(@statusFilter)), ''));
+DECLARE @SearchText nvarchar(120) = NULLIF(LTRIM(RTRIM(@searchText)), '');
+DECLARE @SortKey nvarchar(30) = LOWER(NULLIF(LTRIM(RTRIM(@sortKey)), ''));
+DECLARE @SortDirection nvarchar(4) = LOWER(NULLIF(LTRIM(RTRIM(@sortDirection)), ''));
+
+IF @SortKey NOT IN ('status', 'person', 'room', 'placement', 'checkin') SET @SortKey = 'status';
+IF @SortDirection <> 'desc' SET @SortDirection = 'asc';
+
+;WITH RegisteredPeople AS (
+    SELECT DISTINCT pa.PersonId
+    FROM RegistrationRegistrant rr
+    INNER JOIN Registration r ON r.Id = rr.RegistrationId
+    INNER JOIN PersonAlias pa ON pa.Id = rr.PersonAliasId
+    WHERE r.RegistrationInstanceId = @RegistrationInstanceId
+),
+RawRoster AS (
+    SELECT
+        rr.Id AS RegistrantId,
+        CAST(0 AS bit) AS IsGroupOnly,
+        rr.OnWaitList,
+        rr.GroupMemberId,
+        p.Id AS PersonId,
+        p.NickName,
+        p.FirstName,
+        p.LastName,
+        placement.Id AS PlacementGroupId,
+        placement.Name AS PlacementGroupName,
+        COALESCE(cabinValue.Value, cabinRaw.Value) AS Cabin,
+        busRaw.Value AS BusNumber,
+        COALESCE(colorValue.Value, colorRaw.Value) AS Color,
+        ROW_NUMBER() OVER (
+            PARTITION BY p.Id
+            ORDER BY CASE WHEN rr.OnWaitList = 0 THEN 0 ELSE 1 END,
+                     CASE WHEN rr.GroupMemberId IS NOT NULL THEN 0 ELSE 1 END,
+                     rr.Id DESC
+        ) AS RosterRank
+    FROM RegistrationRegistrant rr
+    INNER JOIN Registration r ON r.Id = rr.RegistrationId
+    INNER JOIN PersonAlias pa ON pa.Id = rr.PersonAliasId
+    INNER JOIN Person p ON p.Id = pa.PersonId
+    LEFT JOIN GroupMember gm ON gm.Id = rr.GroupMemberId AND gm.IsArchived = 0
+    LEFT JOIN [Group] placement ON placement.Id = gm.GroupId
+    LEFT JOIN Attribute cabinAttribute ON cabinAttribute.EntityTypeId = (SELECT Id FROM EntityType WHERE [Name] = 'Rock.Model.Group')
+        AND cabinAttribute.EntityTypeQualifierColumn = 'GroupTypeId'
+        AND cabinAttribute.EntityTypeQualifierValue = CAST(placement.GroupTypeId AS varchar(20))
+        AND cabinAttribute.[Key] = @cabinKey
+    LEFT JOIN AttributeValue cabinRaw ON cabinRaw.AttributeId = cabinAttribute.Id AND cabinRaw.EntityId = placement.Id
+    LEFT JOIN DefinedValue cabinValue ON cabinValue.Guid = TRY_CONVERT(uniqueidentifier, cabinRaw.Value)
+    LEFT JOIN Attribute busAttribute ON busAttribute.EntityTypeId = cabinAttribute.EntityTypeId
+        AND busAttribute.EntityTypeQualifierColumn = 'GroupTypeId'
+        AND busAttribute.EntityTypeQualifierValue = CAST(placement.GroupTypeId AS varchar(20))
+        AND busAttribute.[Key] = @busKey
+    LEFT JOIN AttributeValue busRaw ON busRaw.AttributeId = busAttribute.Id AND busRaw.EntityId = placement.Id
+    LEFT JOIN Attribute colorAttribute ON colorAttribute.EntityTypeId = cabinAttribute.EntityTypeId
+        AND colorAttribute.EntityTypeQualifierColumn = 'GroupTypeId'
+        AND colorAttribute.EntityTypeQualifierValue = CAST(placement.GroupTypeId AS varchar(20))
+        AND colorAttribute.[Key] = @colorKey
+    LEFT JOIN AttributeValue colorRaw ON colorRaw.AttributeId = colorAttribute.Id AND colorRaw.EntityId = placement.Id
+    LEFT JOIN DefinedValue colorValue ON colorValue.Guid = TRY_CONVERT(uniqueidentifier, colorRaw.Value)
+    WHERE r.RegistrationInstanceId = @RegistrationInstanceId
+
+    UNION ALL
+
+    SELECT
+        CAST(NULL AS int), CAST(1 AS bit), CAST(0 AS bit), gm.Id,
+        p.Id, p.NickName, p.FirstName, p.LastName,
+        placement.Id, placement.Name,
+        COALESCE(cabinValue.Value, cabinRaw.Value), busRaw.Value,
+        COALESCE(colorValue.Value, colorRaw.Value),
+        ROW_NUMBER() OVER (PARTITION BY p.Id ORDER BY placement.Name, gm.Id DESC)
+    FROM GroupMember gm
+    INNER JOIN [Group] placement ON placement.Id = gm.GroupId
+    INNER JOIN GroupTypeRole role ON role.Id = gm.GroupRoleId
+    INNER JOIN Person p ON p.Id = gm.PersonId
+    LEFT JOIN RegisteredPeople registered ON registered.PersonId = p.Id
+    LEFT JOIN Attribute cabinAttribute ON cabinAttribute.EntityTypeId = (SELECT Id FROM EntityType WHERE [Name] = 'Rock.Model.Group')
+        AND cabinAttribute.EntityTypeQualifierColumn = 'GroupTypeId'
+        AND cabinAttribute.EntityTypeQualifierValue = CAST(placement.GroupTypeId AS varchar(20))
+        AND cabinAttribute.[Key] = @cabinKey
+    LEFT JOIN AttributeValue cabinRaw ON cabinRaw.AttributeId = cabinAttribute.Id AND cabinRaw.EntityId = placement.Id
+    LEFT JOIN DefinedValue cabinValue ON cabinValue.Guid = TRY_CONVERT(uniqueidentifier, cabinRaw.Value)
+    LEFT JOIN Attribute busAttribute ON busAttribute.EntityTypeId = cabinAttribute.EntityTypeId
+        AND busAttribute.EntityTypeQualifierColumn = 'GroupTypeId'
+        AND busAttribute.EntityTypeQualifierValue = CAST(placement.GroupTypeId AS varchar(20))
+        AND busAttribute.[Key] = @busKey
+    LEFT JOIN AttributeValue busRaw ON busRaw.AttributeId = busAttribute.Id AND busRaw.EntityId = placement.Id
+    LEFT JOIN Attribute colorAttribute ON colorAttribute.EntityTypeId = cabinAttribute.EntityTypeId
+        AND colorAttribute.EntityTypeQualifierColumn = 'GroupTypeId'
+        AND colorAttribute.EntityTypeQualifierValue = CAST(placement.GroupTypeId AS varchar(20))
+        AND colorAttribute.[Key] = @colorKey
+    LEFT JOIN AttributeValue colorRaw ON colorRaw.AttributeId = colorAttribute.Id AND colorRaw.EntityId = placement.Id
+    LEFT JOIN DefinedValue colorValue ON colorValue.Guid = TRY_CONVERT(uniqueidentifier, colorRaw.Value)
+    WHERE gm.IsArchived = 0
+      AND placement.IsArchived = 0
+      AND ISNULL(placement.IsActive, 1) = 1
+      AND placement.GroupTypeId IN ({{ groupTypeIds }})
+      AND ISNULL(role.IsLeader, 0) = 0
+      AND registered.PersonId IS NULL
+),
+Roster AS (
+    SELECT * FROM RawRoster WHERE RosterRank = 1
+),
+Enriched AS (
+    SELECT roster.*, latest.AttendanceId, latest.StartDateTime,
+           latest.CheckinGroupName, latest.LocationName,
+           CASE
+             WHEN roster.OnWaitList = 1 THEN 'waitlist'
+             WHEN roster.GroupMemberId IS NULL THEN 'missing-placement'
+             WHEN latest.AttendanceId IS NULL THEN 'not-checked-in'
+             ELSE 'present'
+           END AS StatusKey
+    FROM Roster roster
+    OUTER APPLY (
+        SELECT TOP 1 a.Id AS AttendanceId, a.StartDateTime,
+               attendanceGroup.Name AS CheckinGroupName, location.Name AS LocationName
+        FROM PersonAlias attendanceAlias
+        INNER JOIN Attendance a ON a.PersonAliasId = attendanceAlias.Id
+        INNER JOIN AttendanceOccurrence occurrence ON occurrence.Id = a.OccurrenceId
+        LEFT JOIN [Group] attendanceGroup ON attendanceGroup.Id = occurrence.GroupId
+        LEFT JOIN Location location ON location.Id = occurrence.LocationId
+        WHERE attendanceAlias.PersonId = roster.PersonId
+          AND a.DidAttend = 1
+          AND ISNULL(occurrence.DidNotOccur, 0) = 0
+          AND occurrence.OccurrenceDate = @CheckinDate
+          AND (occurrence.RootGroupTypeId IN ({{ groupTypeIds }}) OR attendanceGroup.GroupTypeId IN ({{ groupTypeIds }}))
+        ORDER BY a.StartDateTime DESC, a.Id DESC
+    ) latest
+),
+Filtered AS (
+    SELECT * FROM Enriched
+    WHERE (@StatusFilter IS NULL OR @StatusFilter = 'all' OR StatusKey = @StatusFilter)
+      AND (@SearchText IS NULL OR CONCAT(NickName, ' ', FirstName, ' ', LastName) LIKE '%' + @SearchText + '%')
+)
+SELECT * FROM Filtered
+ORDER BY
+  CASE WHEN @SortKey = 'status' AND @SortDirection = 'asc' THEN StatusKey END,
+  CASE WHEN @SortKey = 'status' AND @SortDirection = 'desc' THEN StatusKey END DESC,
+  CASE WHEN @SortKey = 'person' AND @SortDirection = 'asc' THEN LastName END,
+  CASE WHEN @SortKey = 'person' AND @SortDirection = 'desc' THEN LastName END DESC,
+  CASE WHEN @SortKey = 'room' AND @SortDirection = 'asc' THEN LocationName END,
+  CASE WHEN @SortKey = 'room' AND @SortDirection = 'desc' THEN LocationName END DESC,
+  CASE WHEN @SortKey = 'placement' AND @SortDirection = 'asc' THEN PlacementGroupName END,
+  CASE WHEN @SortKey = 'placement' AND @SortDirection = 'desc' THEN PlacementGroupName END DESC,
+  CASE WHEN @SortKey = 'checkin' AND @SortDirection = 'asc' THEN StartDateTime END,
+  CASE WHEN @SortKey = 'checkin' AND @SortDirection = 'desc' THEN StartDateTime END DESC,
+  CASE WHEN LastName IS NULL OR LastName = '' THEN 1 ELSE 0 END,
+  LastName, NickName, FirstName, PersonId;
+{% endsql %}
+
+<div class="table-responsive">
+  <table class="table table-striped table-hover">
+    <thead><tr><th>Person</th><th>Status</th><th>Room</th><th>Placement</th><th>Checked In</th></tr></thead>
+    <tbody>
+    {% for row in rosterRows %}
+      <tr>
+        <td>{{ row.NickName | Default:row.FirstName | Escape }} {{ row.LastName | Escape }}</td>
+        <td>{{ row.StatusKey | Replace:'-',' ' | Capitalize }}</td>
+        <td>{{ row.LocationName | Default:'-' | Escape }}</td>
+        <td>{{ row.PlacementGroupName | Default:'-' | Escape }}</td>
+        <td>{{ row.StartDateTime | Date:'g' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
