@@ -1,0 +1,153 @@
+{% comment %}
+  Read-only GET results endpoint. Filter values are allowlisted and all user
+  text enters SQL through Lava query parameters.
+{% endcomment %}
+{% assign filterStatus = QueryString.status | Default:Form.status | Default:'all' | Downcase %}
+{% unless filterStatus == '1' or filterStatus == '2' or filterStatus == '3' or filterStatus == '4' %}
+  {% assign filterStatus = 'all' %}
+{% endunless %}
+{% assign filterType = QueryString.type | Default:Form.type | Default:'all' | Downcase %}
+{% unless filterType == '1' or filterType == '2' or filterType == '3' %}
+  {% assign filterType = 'all' %}
+{% endunless %}
+{% assign searchText = QueryString.q | Default:Form.q | Default:'' | Trim | Truncate:120,'' %}
+{% assign pageNumber = QueryString.page | Default:Form.page | Default:1 | AsInteger %}
+{% if pageNumber < 1 %}{% assign pageNumber = 1 %}{% endif %}
+{% assign pageSize = QueryString.pageSize | Default:Form.pageSize | Default:25 | AsInteger %}
+{% unless pageSize == 25 or pageSize == 50 or pageSize == 100 %}{% assign pageSize = 25 %}{% endunless %}
+{% assign detailPageId = ConfigurationRigging.communicationDetailPageId | Default:0 | AsInteger %}
+
+{% sql return:'communicationTotal' status:'{{ filterStatus }}' type:'{{ filterType }}' search:'{{ searchText }}' %}
+DECLARE @StatusText nvarchar(10) = @status;
+DECLARE @TypeText nvarchar(10) = @type;
+DECLARE @Search nvarchar(120) = NULLIF(LTRIM(RTRIM(@search)), '');
+DECLARE @Status int = CASE WHEN @StatusText IN ('1', '2', '3', '4') THEN TRY_CONVERT(int, @StatusText) END;
+DECLARE @Type int = CASE WHEN @TypeText IN ('1', '2', '3') THEN TRY_CONVERT(int, @TypeText) END;
+
+SELECT COUNT(1) AS TotalCount
+FROM Communication c
+WHERE c.Status <> 0
+  AND (@Status IS NULL OR c.Status = @Status)
+  AND (@Type IS NULL OR c.CommunicationType = @Type)
+  AND (@Search IS NULL OR c.Subject LIKE '%' + @Search + '%' OR c.Name LIKE '%' + @Search + '%');
+{% endsql %}
+{% assign totalCount = communicationTotal[0].TotalCount | Default:0 | AsInteger %}
+{% assign totalPages = totalCount | Plus:pageSize | Minus:1 | DividedBy:pageSize %}
+{% if totalPages < 1 %}{% assign totalPages = 1 %}{% endif %}
+{% if pageNumber > totalPages %}{% assign pageNumber = totalPages %}{% endif %}
+{% assign pageOffset = pageNumber | Minus:1 | Times:pageSize %}
+
+{% sql return:'communications' status:'{{ filterStatus }}' type:'{{ filterType }}' search:'{{ searchText }}' offset:'{{ pageOffset }}' pageSize:'{{ pageSize }}' %}
+DECLARE @StatusText nvarchar(10) = @status;
+DECLARE @TypeText nvarchar(10) = @type;
+DECLARE @Search nvarchar(120) = NULLIF(LTRIM(RTRIM(@search)), '');
+DECLARE @Offset int = CASE WHEN TRY_CONVERT(int, @offset) >= 0 THEN TRY_CONVERT(int, @offset) ELSE 0 END;
+DECLARE @PageSize int = CASE WHEN TRY_CONVERT(int, @pageSize) IN (25, 50, 100) THEN TRY_CONVERT(int, @pageSize) ELSE 25 END;
+DECLARE @Status int = CASE WHEN @StatusText IN ('1', '2', '3', '4') THEN TRY_CONVERT(int, @StatusText) END;
+DECLARE @Type int = CASE WHEN @TypeText IN ('1', '2', '3') THEN TRY_CONVERT(int, @TypeText) END;
+
+;WITH Filtered AS (
+    SELECT c.Id, c.CommunicationType, c.Status, c.Name, c.Subject, c.PushTitle,
+           c.CreatedDateTime, c.SendDateTime, c.FutureSendDateTime,
+           c.SenderPersonAliasId, c.ReviewerPersonAliasId, c.ReviewedDateTime
+    FROM Communication c
+    WHERE c.Status <> 0
+      AND (@Status IS NULL OR c.Status = @Status)
+      AND (@Type IS NULL OR c.CommunicationType = @Type)
+      AND (@Search IS NULL OR c.Subject LIKE '%' + @Search + '%' OR c.Name LIKE '%' + @Search + '%')
+), PageRows AS (
+    SELECT *
+    FROM Filtered
+    ORDER BY COALESCE(SendDateTime, FutureSendDateTime, CreatedDateTime) DESC, Id DESC
+    OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY
+)
+SELECT rows.*,
+       sender.NickName AS SenderFirstName, sender.LastName AS SenderLastName,
+       reviewer.NickName AS ReviewerFirstName, reviewer.LastName AS ReviewerLastName,
+       ISNULL(recipientCounts.PendingCount, 0) AS PendingCount,
+       ISNULL(recipientCounts.DeliveredCount, 0) AS DeliveredCount,
+       ISNULL(recipientCounts.FailedCount, 0) AS FailedCount,
+       ISNULL(recipientCounts.CancelledCount, 0) AS CancelledCount,
+       ISNULL(recipientCounts.OpenedCount, 0) AS OpenedCount,
+       ISNULL(recipientCounts.RecipientCount, 0) AS RecipientCount
+FROM PageRows rows
+LEFT JOIN PersonAlias senderAlias ON senderAlias.Id = rows.SenderPersonAliasId
+LEFT JOIN Person sender ON sender.Id = senderAlias.PersonId
+LEFT JOIN PersonAlias reviewerAlias ON reviewerAlias.Id = rows.ReviewerPersonAliasId
+LEFT JOIN Person reviewer ON reviewer.Id = reviewerAlias.PersonId
+OUTER APPLY (
+    SELECT COUNT(1) AS RecipientCount,
+           SUM(CASE WHEN cr.Status = 0 THEN 1 ELSE 0 END) AS PendingCount,
+           SUM(CASE WHEN cr.Status IN (1, 4) THEN 1 ELSE 0 END) AS DeliveredCount,
+           SUM(CASE WHEN cr.Status = 2 THEN 1 ELSE 0 END) AS FailedCount,
+           SUM(CASE WHEN cr.Status = 3 THEN 1 ELSE 0 END) AS CancelledCount,
+           SUM(CASE WHEN cr.Status = 4 THEN 1 ELSE 0 END) AS OpenedCount
+    FROM CommunicationRecipient cr
+    WHERE cr.CommunicationId = rows.Id
+) recipientCounts
+ORDER BY COALESCE(rows.SendDateTime, rows.FutureSendDateTime, rows.CreatedDateTime) DESC, rows.Id DESC;
+{% endsql %}
+
+{% assign previousPage = pageNumber | Minus:1 %}
+{% assign nextPage = pageNumber | Plus:1 %}
+
+{% httpresponse %}
+[[ header key:'Content-Type' ]]text/html; charset=utf-8[[ endheader ]]
+[[ header key:'Cache-Control' ]]private, no-store[[ endheader ]]
+{% endhttpresponse %}
+<div class="table-responsive">
+  <table class="table table-striped table-hover">
+    <thead>
+      <tr><th>Communication</th><th>Type</th><th>Status</th><th>Recipients</th><th>Effective date</th><th>Sender</th></tr>
+    </thead>
+    <tbody>
+    {% for communication in communications %}
+      {% assign subject = communication.Subject | Default:communication.PushTitle | Default:communication.Name | Default:'Untitled communication' %}
+      <tr>
+        <td>
+          {% if detailPageId > 0 %}
+            <a href="~/page/{{ detailPageId }}?Communication={{ communication.Id }}">{{ subject | Escape }}</a>
+          {% else %}
+            {{ subject | Escape }}
+          {% endif %}
+        </td>
+        <td>
+          {% case communication.CommunicationType %}
+            {% when 1 %}Email{% when 2 %}SMS{% when 3 %}Push{% else %}Preference{% endcase %}
+        </td>
+        <td class="communication-history-status">
+          {% case communication.Status %}
+            {% when 1 %}Draft{% when 2 %}Pending approval{% when 3 %}Approved{% when 4 %}Denied{% else %}Unknown{% endcase %}
+        </td>
+        <td>
+          {{ communication.RecipientCount }} total;
+          {{ communication.DeliveredCount }} delivered;
+          {{ communication.FailedCount }} failed;
+          {{ communication.OpenedCount }} opened
+        </td>
+        <td>{{ communication.SendDateTime | Default:communication.FutureSendDateTime | Default:communication.CreatedDateTime | Date:'g' }}</td>
+        <td>{{ communication.SenderFirstName | Default:'System' | Escape }} {{ communication.SenderLastName | Escape }}</td>
+      </tr>
+    {% endfor %}
+    {% if communications == empty %}
+      <tr><td colspan="6" class="text-muted">No communications match these filters.</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<nav aria-label="Communication history pages" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+  <span>Page {{ pageNumber }} of {{ totalPages }}; {{ totalCount }} communications</span>
+  <span>
+    <button type="button" class="btn btn-default" {% if pageNumber <= 1 %}disabled{% endif %}
+            onclick="communicationHistoryPage({{ previousPage }})"
+            hx-get="^/communication-history-active-search/results"
+            hx-include="#communication-history-filters" hx-target="#communication-history-results"
+            hx-indicator="#communication-history-loading">Previous</button>
+    <button type="button" class="btn btn-default" {% if pageNumber >= totalPages %}disabled{% endif %}
+            onclick="communicationHistoryPage({{ nextPage }})"
+            hx-get="^/communication-history-active-search/results"
+            hx-include="#communication-history-filters" hx-target="#communication-history-results"
+            hx-indicator="#communication-history-loading">Next</button>
+  </span>
+</nav>

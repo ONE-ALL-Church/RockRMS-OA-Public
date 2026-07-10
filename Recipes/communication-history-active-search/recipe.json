@@ -1,0 +1,20 @@
+{
+  "schema": "rock-kb-external-recipe-v1",
+  "recipe_id": "oneall:communication-history-active-search",
+  "org_id": "oneall",
+  "title": "Communication History Active Search",
+  "summary": "Build a secured read-only Helix communication browser with allowlisted filters, parameterized search, bounded pagination, and aggregate recipient outcomes.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "entrypoint": "src/list.lava",
+  "concept_ids": ["communications", "helix", "lava", "security-permissions"],
+  "source_ref": "main",
+  "files": [
+    "README.md",
+    "LICENSE",
+    "config/configuration.example.json",
+    "src/list.lava",
+    "src/results.lava",
+    "tests/static_contract.py"
+  ]
+}

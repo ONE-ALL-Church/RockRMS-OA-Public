@@ -1,0 +1,129 @@
+{% comment %}
+  POST reference endpoint. It always returns the same response shape. Only an
+  exact, unique person match creates a persisted verification workflow.
+{% endcomment %}
+{% assign firstName = Form.firstName | Trim %}
+{% assign lastName = Form.lastName | Trim %}
+{% assign email = Form.email | Trim | Downcase %}
+{% assign mobilePhone = Form.mobilePhone | Trim %}
+{% assign birthDate = Form.birthDate | Trim %}
+{% assign workflowTypeGuid = ConfigurationRigging.verificationWorkflowTypeGuid | Default:'' | Trim %}
+{% assign intendedAction = ConfigurationRigging.intendedAction | Default:'' | Trim %}
+{% assign mobilePhoneTypeValueId = ConfigurationRigging.mobilePhoneTypeValueId | AsInteger %}
+{% assign expiresMinutes = ConfigurationRigging.expiresMinutes | Default:10 | AsInteger %}
+{% assign maxPersonSends = ConfigurationRigging.maxSendsPerPersonPerHour | Default:3 | AsInteger %}
+{% assign maxIpSends = ConfigurationRigging.maxSendsPerIpPerHour | Default:10 | AsInteger %}
+{% assign requestIp = Context.Request.UserHostAddress | Default:'' | Trim %}
+{% assign phoneDigits = mobilePhone | Replace:' ','' | Replace:'-','' | Replace:'(','' | Replace:')','' | Replace:'.','' | Replace:'+','' %}
+{% assign currentPersonId = CurrentPerson.Id | Default:0 | AsInteger %}
+
+{% assign challengeSession = '' %}
+{% sql return:'sessionSeed' %}
+SELECT LOWER(CONVERT(nvarchar(50), NEWID())) AS SessionGuid;
+{% endsql %}
+{% assign challengeSession = sessionSeed[0].SessionGuid | Trim %}
+
+{% assign candidateAliasGuid = '' %}
+{% if currentPersonId == 0 and workflowTypeGuid != '' and intendedAction != '' and mobilePhoneTypeValueId > 0 and firstName != '' and lastName != '' and email != '' and phoneDigits != '' and birthDate != '' %}
+{% sql return:'candidate' firstName:'{{ firstName }}' lastName:'{{ lastName }}' email:'{{ email }}' phoneDigits:'{{ phoneDigits }}' birthDate:'{{ birthDate }}' phoneTypeId:'{{ mobilePhoneTypeValueId }}' %}
+DECLARE @FirstName nvarchar(100) = LOWER(LTRIM(RTRIM(@firstName)));
+DECLARE @LastName nvarchar(100) = LOWER(LTRIM(RTRIM(@lastName)));
+DECLARE @Email nvarchar(255) = LOWER(LTRIM(RTRIM(@email)));
+DECLARE @Phone nvarchar(32) = @phoneDigits;
+DECLARE @BirthDate date = TRY_CONVERT(date, @birthDate);
+DECLARE @PhoneTypeId int = TRY_CONVERT(int, @phoneTypeId);
+
+IF LEN(@Phone) = 11 AND LEFT(@Phone, 1) = '1' SET @Phone = RIGHT(@Phone, 10);
+
+;WITH MatchedPeople AS (
+    SELECT DISTINCT p.Id AS PersonId, pa.Id AS AliasId, pa.[Guid] AS AliasGuid
+    FROM Person p
+    INNER JOIN PersonAlias pa ON pa.Id = p.PrimaryAliasId
+    INNER JOIN PhoneNumber pn ON pn.PersonId = p.Id
+    WHERE ISNULL(p.IsDeceased, 0) = 0
+      AND p.PrimaryAliasId IS NOT NULL
+      AND @BirthDate IS NOT NULL
+      AND CONVERT(date, p.BirthDate) = @BirthDate
+      AND LOWER(LTRIM(RTRIM(ISNULL(p.LastName, '')))) = @LastName
+      AND (
+          LOWER(LTRIM(RTRIM(ISNULL(p.FirstName, '')))) = @FirstName
+          OR LOWER(LTRIM(RTRIM(ISNULL(p.NickName, '')))) = @FirstName
+      )
+      AND LOWER(LTRIM(RTRIM(ISNULL(p.Email, '')))) = @Email
+      AND pn.NumberTypeValueId = @PhoneTypeId
+      AND pn.IsMessagingEnabled = 1
+      AND CASE
+            WHEN LEN(pn.Number) = 11 AND LEFT(pn.Number, 1) = '1' THEN RIGHT(pn.Number, 10)
+            ELSE pn.Number
+          END = @Phone
+), MatchCount AS (
+    SELECT COUNT(1) AS TotalMatches FROM MatchedPeople
+)
+SELECT CAST(m.AliasGuid AS nvarchar(50)) AS AliasGuid
+FROM MatchedPeople m
+CROSS JOIN MatchCount c
+WHERE c.TotalMatches = 1;
+{% endsql %}
+{% assign candidateAliasGuid = candidate[0].AliasGuid | Default:'' | Trim %}
+{% endif %}
+
+{% assign allowedToSend = false %}
+{% if candidateAliasGuid != '' %}
+{% sql return:'rateLimit' candidateGuid:'{{ candidateAliasGuid }}' requestIp:'{{ requestIp }}' workflowTypeGuid:'{{ workflowTypeGuid }}' %}
+DECLARE @CandidateGuid nvarchar(50) = @candidateGuid;
+DECLARE @RequestIp nvarchar(100) = @requestIp;
+DECLARE @WorkflowTypeGuid uniqueidentifier = TRY_CONVERT(uniqueidentifier, @workflowTypeGuid);
+DECLARE @WorkflowEntityTypeId int = (SELECT TOP 1 Id FROM EntityType WHERE [Name] = 'Rock.Model.Workflow');
+
+SELECT
+    SUM(CASE WHEN candidate.Value = @CandidateGuid THEN 1 ELSE 0 END) AS PersonSends,
+    SUM(CASE WHEN requestIp.Value = @RequestIp AND @RequestIp <> '' THEN 1 ELSE 0 END) AS IpSends
+FROM Workflow w
+INNER JOIN WorkflowType wt ON wt.Id = w.WorkflowTypeId
+LEFT JOIN AttributeValue candidate ON candidate.EntityId = w.Id
+LEFT JOIN Attribute candidateAttribute ON candidateAttribute.Id = candidate.AttributeId
+    AND candidateAttribute.EntityTypeId = @WorkflowEntityTypeId AND candidateAttribute.[Key] = 'Candidate'
+LEFT JOIN AttributeValue requestIp ON requestIp.EntityId = w.Id
+LEFT JOIN Attribute requestIpAttribute ON requestIpAttribute.Id = requestIp.AttributeId
+    AND requestIpAttribute.EntityTypeId = @WorkflowEntityTypeId AND requestIpAttribute.[Key] = 'RequestIp'
+WHERE wt.[Guid] = @WorkflowTypeGuid
+  AND w.CreatedDateTime >= DATEADD(hour, -1, GETDATE())
+  AND candidateAttribute.Id IS NOT NULL
+  AND requestIpAttribute.Id IS NOT NULL;
+{% endsql %}
+{% assign personSends = rateLimit[0].PersonSends | Default:0 | AsInteger %}
+{% assign ipSends = rateLimit[0].IpSends | Default:0 | AsInteger %}
+{% if personSends < maxPersonSends and ipSends < maxIpSends %}{% assign allowedToSend = true %}{% endif %}
+{% endif %}
+
+{% if allowedToSend %}
+{% sql return:'verificationSeed' sessionGuid:'{{ challengeSession }}' expiresMinutes:'{{ expiresMinutes }}' %}
+DECLARE @Random bigint = CONVERT(bigint, CRYPT_GEN_RANDOM(8)) & 9223372036854775807;
+DECLARE @Code varchar(6) = RIGHT('000000' + CONVERT(varchar(6), @Random % 1000000), 6);
+DECLARE @SessionGuid nvarchar(50) = @sessionGuid;
+DECLARE @ExpiresMinutes int = CASE WHEN TRY_CONVERT(int, @expiresMinutes) BETWEEN 1 AND 10 THEN TRY_CONVERT(int, @expiresMinutes) ELSE 10 END;
+SELECT @Code AS Code,
+       CONVERT(varchar(64), HASHBYTES('SHA2_256', @Code + ':' + @SessionGuid), 2) AS CodeHash,
+       CONVERT(varchar(19), DATEADD(minute, @ExpiresMinutes, GETDATE()), 120) AS ExpiresAt;
+{% endsql %}
+{% assign code = verificationSeed[0].Code | Trim %}
+{% assign codeHash = verificationSeed[0].CodeHash | Trim %}
+{% assign expiresAt = verificationSeed[0].ExpiresAt | Trim %}
+
+{% capture activation %}
+{% workflowactivate workflowtype:'{{ workflowTypeGuid }}' workflowname:'SMS verification challenge' candidate:'{{ candidateAliasGuid }}' code:'{{ code }}' codehash:'{{ codeHash }}' sessionguid:'{{ challengeSession }}' intendedaction:'{{ intendedAction }}' expiresat:'{{ expiresAt }}' attempts:'0' verified:'False' consumedat:'' requestip:'{{ requestIp }}' %}
+WorkflowId={{ Workflow.Id | Default:'' }};Error={{ Error | Default:'' }}
+{% endworkflowactivate %}
+{% endcapture %}
+{% endif %}
+
+{% httpresponse %}
+[[ header key:'Content-Type' ]]text/html; charset=utf-8[[ endheader ]]
+[[ header key:'Cache-Control' ]]no-store[[ endheader ]]
+{% endhttpresponse %}
+<div class="alert alert-info" role="status">
+  If the submitted details match an eligible profile, a verification code has been sent.
+</div>
+<label for="verification-code">Verification code</label>
+<input id="verification-code" name="verificationCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+<input type="hidden" name="verificationSession" value="{{ challengeSession | Escape }}">
