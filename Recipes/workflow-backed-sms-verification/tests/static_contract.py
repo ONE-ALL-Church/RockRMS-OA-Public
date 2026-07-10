@@ -29,7 +29,15 @@ assert config["mobilePhoneTypeValueId"] == 0
 assert "WHERE c.TotalMatches = 1" in start
 assert "CRYPT_GEN_RANDOM" in start
 assert "CodeHash" in start and "Attempts" in check and "ExpiresAt" in check
-assert "ConsumedAt" in final and "UPDLOCK, HOLDLOCK" in final
+assert "{% modifyworkflow" in check and "{% modifyworkflow" in final
+assert "[[ attribute key:'Attempts' ]]" in check
+assert "[[ attribute key:'Verified' ]]" in check
+assert "[[ attribute key:'ConsumedAt' ]]" in final
+assert "protectedActionIdempotencyKey" in final
+assert not re.search(
+    r"(?is)\b(UPDATE\s+[A-Za-z_\[]|INSERT\s+INTO|DELETE\s+FROM|MERGE\s+[A-Za-z_\[])" ,
+    "\n".join((start, check, final)),
+)
 assert "PersonAlias" not in check
 assert "name=\"verificationSession\"" in start
 assert "name=\"verifiedAlias" not in all_text

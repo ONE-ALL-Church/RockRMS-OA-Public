@@ -18,15 +18,18 @@ people, phone numbers, secrets, or production configuration.
   intended action, expiration, attempts, verified state, and consumption time.
 - Apply both person and request-source send limits. Add edge/WAF controls or a
   challenge mechanism when anonymous traffic warrants them.
-- Recheck and consume the challenge on the server immediately before the final
-  action. A successful earlier browser step is not authorization.
+- Recheck the challenge on the server immediately before the final action and
+  use the opaque session as an idempotency key. A successful earlier browser
+  step is not authorization.
 - Keep the delivery code only as long as the workflow needs it to send the SMS.
+- Keep endpoint SQL query-only. Write workflow state through Rock's
+  `ModifyWorkflow` command so normal entity behavior and cache invalidation run.
 
 ## Files
 
 - `src/verify-start.lava`: exact-match, rate-limit, and challenge activation.
-- `src/verify-check.lava`: atomic attempt counting and code verification.
-- `src/final-submit-recheck.lava`: one-time server-side challenge consumption.
+- `src/verify-check.lava`: query-only validation plus modify-command state writes.
+- `src/final-submit-recheck.lava`: final recheck, audit marker, and idempotency key.
 - `config/configuration.example.json`: public-safe application rigging shape.
 - `config/workflow-attributes.md`: required workflow contract and delivery flow.
 - `tests/static_contract.py`: executable public-safety and security invariants.
@@ -39,13 +42,16 @@ people, phone numbers, secrets, or production configuration.
    `config/workflow-attributes.md`.
 2. Configure the workflow to send `Code` by SMS and then clear `Code`.
 3. Create POST-only Lava Application endpoints for start, check, and final
-   submission. Enable only the Lava commands each endpoint requires.
+   submission. Enable `Sql` and `WorkflowActivate` for start, then `Sql` and
+   `ModifyWorkflow` for check and final submission. Do not enable unrelated
+   commands.
 4. Copy `configuration.example.json` into application rigging and supply every
    local value. Do not add fallback production IDs to source.
 5. Adapt the strict match fields to the form's actual risk. Do not weaken the
    match merely to increase match rate.
 6. Place the final-submit recheck immediately before the action that uses the
-   verified person context.
+   verified person context. Make that action idempotent using
+   `protectedActionIdempotencyKey`.
 7. Add CSRF protection, anonymous abuse controls, TLS, authorization for any
    staff review surfaces, and an explicit data-retention decision.
 
@@ -58,8 +64,16 @@ the organization has completed an appropriate risk and accessibility review.
 
 The example hash reduces accidental plain-code exposure but does not protect a
 six-digit code from an attacker who can read the database. Limit database
-access, expire codes within ten minutes, accept each challenge once, count every
-attempt, and do not reset failed-attempt history when resending.
+access, expire codes within ten minutes, count every attempt, and do not reset
+failed-attempt history when resending.
+
+The reference performs no SQL writes. `ModifyWorkflow` updates `Attempts`,
+`Verified`, and `ConsumedAt`. Modify commands do not provide an atomic
+compare-and-set guarantee, so two concurrent final requests can both pass the
+recheck. The protected operation must reject a repeated
+`protectedActionIdempotencyKey` or return the result created by the first call.
+Use a purpose-built Rock action or API with an application-layer transaction
+when strict exactly-once execution is required.
 
 Do not reveal whether a person exists. The sample returns a fake opaque session
 for unmatched requests so the response shape remains consistent. Users can
@@ -71,7 +85,8 @@ with request throttling and monitoring.
 - Exact single match sends one code; zero or multiple matches send none.
 - All start responses have the same status, message, and field shape.
 - Invalid, expired, over-attempt, wrong-action, and consumed challenges fail.
-- Two concurrent successful submissions cannot consume one challenge twice.
+- Concurrent successful submissions use the same idempotency key and the
+  protected action produces no duplicate business result.
 - The browser never receives a person ID, alias ID, or alias GUID.
 - Resends are limited per candidate and request source.
 - The workflow clears `Code` after delivery and retention is reviewed wherever
@@ -87,10 +102,11 @@ python3 tests/static_contract.py
 ## Compatibility
 
 The pattern uses standard workflow, workflow attribute, person alias, person,
-phone number, and Lava SQL/WorkflowActivate behavior. Verify command security,
-transaction behavior, field types, communication retention, proxy-aware client
-IP handling, and SQL Server support against the target Rock environment. The
-reference was last reviewed against the Rock 17/18 model family in July 2026.
+phone number, and Lava SQL, WorkflowActivate, and ModifyWorkflow behavior.
+Verify command security, modify-result handling, field types, communication
+retention, proxy-aware client IP handling, idempotency, and SQL Server support
+against the target Rock environment. The reference was last reviewed against
+the Rock 17/18 model family in July 2026.
 
 ## Standards References
 
