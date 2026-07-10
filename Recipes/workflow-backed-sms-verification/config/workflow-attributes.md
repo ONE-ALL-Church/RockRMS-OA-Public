@@ -13,9 +13,9 @@ business workflow that grants access or changes a person record.
 | `SessionGuid` | Text | Random challenge identifier returned to the browser. |
 | `IntendedAction` | Text | Local action key that prevents using a challenge on another form. |
 | `ExpiresAt` | Text or Date Time | UTC/local server expiration interpreted consistently by all endpoints. |
-| `Attempts` | Integer | Failed and successful verification attempts. |
+| `Attempts` | Integer | Failed and successful verification attempts, updated through `ModifyWorkflow`. |
 | `Verified` | Boolean | Set only by the verification endpoint. |
-| `ConsumedAt` | Text or Date Time | Set once by the final-submit recheck. |
+| `ConsumedAt` | Text or Date Time | Best-effort audit marker set through `ModifyWorkflow` by the final-submit recheck. |
 | `RequestIp` | Text | Bounded audit/rate-limit input; apply the organization's retention policy. |
 
 ## Activation Actions
@@ -27,7 +27,9 @@ business workflow that grants access or changes a person record.
 The hash limits accidental disclosure of the code in workflow views and
 exports. A six-digit code has low entropy, so the hash is not a defense against
 an attacker who can read the database. Expiration, attempt limits, rate limits,
-single use, transport security, and database access controls remain required.
+idempotent final actions, transport security, and database access controls
+remain required. `ModifyWorkflow` is not an atomic compare-and-set operation;
+use `IntendedAction + SessionGuid` as the protected action's idempotency key.
 
 Confirm whether the selected Rock communication action retains the rendered
 SMS body in communication history. Apply an explicit retention decision rather
