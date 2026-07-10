@@ -1,0 +1,569 @@
+{%- comment -%}
+Registration-to-Connection Request workflow deploy
+
+Run only from a temporary admin-only Lava Application endpoint with:
+  RockEntity, RockEntityModify, Sql
+
+Sql is used only for read-only configuration lookup and verification. Runtime
+writes use native Rock workflow actions. The script deliberately does not wire
+the workflow to a RegistrationTemplate.
+{%- endcomment -%}
+
+{%- comment -%} ADAPTATION REQUIRED {%- endcomment -%}
+{% assign workflowTypeName = 'Intake Registration to Follow-up Connection Request' %}
+{% assign deployForeignKeyPrefix = 'example:intake-registration-to-connection' %}
+{% assign connectionOpportunityGuid = '' %}
+{% assign connectionStatusGuid = '' %}
+{% assign requestCommentsSourceAttributeKey = 'FollowUpNotes' %}
+{% assign mappedSourceAttributeKey = 'IntakeSummary' %}
+{% assign sourceRegistrationTargetAttributeKey = 'SourceRegistrationId' %}
+{% assign mappedTargetAttributeKey = 'IntakeSummary' %}
+
+{% assign configurationValid = true %}
+{% if workflowTypeName == empty or deployForeignKeyPrefix == empty %}
+  {% assign configurationValid = false %}
+{% endif %}
+{% if connectionOpportunityGuid == empty or connectionStatusGuid == empty %}
+  {% assign configurationValid = false %}
+{% endif %}
+{% if sourceRegistrationTargetAttributeKey == empty or mappedTargetAttributeKey == empty %}
+  {% assign configurationValid = false %}
+{% endif %}
+
+<h1>Registration-to-Connection Request Workflow Deploy</h1>
+
+{% unless configurationValid %}
+  <div class="alert alert-danger">
+    STOP: complete every required value in the ADAPTATION REQUIRED block.
+  </div>
+{% else %}
+  {%- comment -%}
+  Resolve system-owned IDs by class/key. Do not copy instance-specific numeric
+  IDs into a public recipe. These rows are re-resolved on every deploy.
+  {%- endcomment -%}
+  {% sql return:'systemRows' %}
+    SELECT
+      MAX(CASE WHEN et.Name = 'Rock.Model.Workflow' THEN et.Id END) AS WorkflowEntityTypeId,
+      MAX(CASE WHEN et.Name = 'Rock.Model.WorkflowActionType' THEN et.Id END) AS WorkflowActionTypeEntityTypeId,
+      MAX(CASE WHEN et.Name = 'Rock.Model.ConnectionRequest' THEN et.Id END) AS ConnectionRequestEntityTypeId,
+      MAX(CASE WHEN et.Name = 'Rock.Model.ConnectionRequest' THEN CONVERT(varchar(36), et.Guid) END) AS ConnectionRequestEntityTypeGuid,
+      MAX(CASE WHEN et.Name = 'Rock.Workflow.Action.RunLava' THEN et.Id END) AS RunLavaEntityTypeId,
+      MAX(CASE WHEN et.Name = 'Rock.Workflow.Action.CreateConnectionRequest' THEN et.Id END) AS CreateRequestEntityTypeId,
+      MAX(CASE WHEN et.Name = 'Rock.Workflow.Action.SetEntityAttribute' THEN et.Id END) AS SetEntityAttributeEntityTypeId,
+      MAX(CASE WHEN et.Name = 'Rock.Workflow.Action.CompleteWorkflow' THEN et.Id END) AS CompleteWorkflowEntityTypeId,
+      MAX(CASE WHEN ft.Class = 'Rock.Field.Types.IntegerFieldType' THEN ft.Id END) AS IntegerFieldTypeId,
+      MAX(CASE WHEN ft.Class = 'Rock.Field.Types.PersonFieldType' THEN ft.Id END) AS PersonFieldTypeId,
+      MAX(CASE WHEN ft.Class = 'Rock.Field.Types.CampusFieldType' THEN ft.Id END) AS CampusFieldTypeId,
+      MAX(CASE WHEN ft.Class = 'Rock.Field.Types.ConnectionOpportunityFieldType' THEN ft.Id END) AS ConnectionOpportunityFieldTypeId,
+      MAX(CASE WHEN ft.Class = 'Rock.Field.Types.ConnectionStatusFieldType' THEN ft.Id END) AS ConnectionStatusFieldTypeId,
+      MAX(CASE WHEN ft.Class = 'Rock.Field.Types.ConnectionRequestFieldType' THEN ft.Id END) AS ConnectionRequestFieldTypeId,
+      MAX(CASE WHEN ft.Class = 'Rock.Field.Types.MemoFieldType' THEN ft.Id END) AS MemoFieldTypeId
+    FROM EntityType et
+    CROSS JOIN FieldType ft
+    WHERE et.Name IN (
+      'Rock.Model.Workflow',
+      'Rock.Model.WorkflowActionType',
+      'Rock.Model.ConnectionRequest',
+      'Rock.Workflow.Action.RunLava',
+      'Rock.Workflow.Action.CreateConnectionRequest',
+      'Rock.Workflow.Action.SetEntityAttribute',
+      'Rock.Workflow.Action.CompleteWorkflow'
+    )
+      AND ft.Class IN (
+        'Rock.Field.Types.IntegerFieldType',
+        'Rock.Field.Types.PersonFieldType',
+        'Rock.Field.Types.CampusFieldType',
+        'Rock.Field.Types.ConnectionOpportunityFieldType',
+        'Rock.Field.Types.ConnectionStatusFieldType',
+        'Rock.Field.Types.ConnectionRequestFieldType',
+        'Rock.Field.Types.MemoFieldType'
+      );
+  {% endsql %}
+  {% assign system = systemRows | First %}
+
+  {% if system.WorkflowEntityTypeId == empty or system.CreateRequestEntityTypeId == empty or system.MemoFieldTypeId == empty %}
+    <div class="alert alert-danger">STOP: required Rock system entity or field types were not resolved.</div>
+  {% else %}
+    {% sql return:'settingRows' %}
+      SELECT
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.RunLava' AND q.[Key] = 'Value' THEN q.Id END) AS RunLavaValueId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.RunLava' AND q.[Key] = 'Attribute' THEN q.Id END) AS RunLavaAttributeId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.RunLava' AND q.[Key] = 'Order' THEN q.Id END) AS RunLavaOrderId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.RunLava' AND q.[Key] = 'Active' THEN q.Id END) AS RunLavaActiveId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.RunLava' AND q.[Key] = 'EnabledLavaCommands' THEN q.Id END) AS RunLavaCommandsId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CreateConnectionRequest' AND q.[Key] = 'PersonAttribute' THEN q.Id END) AS CreatePersonId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CreateConnectionRequest' AND q.[Key] = 'ConnectionOpportunityAttribute' THEN q.Id END) AS CreateOpportunityId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CreateConnectionRequest' AND q.[Key] = 'ConnectionStatusAttribute' THEN q.Id END) AS CreateStatusId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CreateConnectionRequest' AND q.[Key] = 'CampusAttribute' THEN q.Id END) AS CreateCampusId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CreateConnectionRequest' AND q.[Key] = 'ConnectionCommentAttribute' THEN q.Id END) AS CreateCommentId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CreateConnectionRequest' AND q.[Key] = 'ConnectionRequestAttribute' THEN q.Id END) AS CreateOutputId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CreateConnectionRequest' AND q.[Key] = 'Order' THEN q.Id END) AS CreateOrderId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CreateConnectionRequest' AND q.[Key] = 'Active' THEN q.Id END) AS CreateActiveId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.SetEntityAttribute' AND q.[Key] = 'EntityType' THEN q.Id END) AS SetEntityTypeId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.SetEntityAttribute' AND q.[Key] = 'EntityIdGuid' THEN q.Id END) AS SetEntityIdGuidId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.SetEntityAttribute' AND q.[Key] = 'AttributeKey' THEN q.Id END) AS SetAttributeKeyId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.SetEntityAttribute' AND q.[Key] = 'AttributeValue' THEN q.Id END) AS SetAttributeValueId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.SetEntityAttribute' AND q.[Key] = 'Order' THEN q.Id END) AS SetOrderId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.SetEntityAttribute' AND q.[Key] = 'Active' THEN q.Id END) AS SetActiveId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CompleteWorkflow' AND q.[Key] = 'Status' THEN q.Id END) AS CompleteStatusId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CompleteWorkflow' AND q.[Key] = 'Order' THEN q.Id END) AS CompleteOrderId,
+        MAX(CASE WHEN q.ActionClass = 'Rock.Workflow.Action.CompleteWorkflow' AND q.[Key] = 'Active' THEN q.Id END) AS CompleteActiveId
+      FROM (
+        SELECT a.Id, a.[Key], et.Name AS ActionClass
+        FROM Attribute a
+        INNER JOIN EntityType et
+          ON a.EntityTypeQualifierValue = CONVERT(varchar(20), et.Id)
+        WHERE a.EntityTypeId = {{ system.WorkflowActionTypeEntityTypeId }}
+          AND a.EntityTypeQualifierColumn = 'EntityTypeId'
+          AND et.Name IN (
+            'Rock.Workflow.Action.RunLava',
+            'Rock.Workflow.Action.CreateConnectionRequest',
+            'Rock.Workflow.Action.SetEntityAttribute',
+            'Rock.Workflow.Action.CompleteWorkflow'
+          )
+      ) q;
+    {% endsql %}
+    {% assign settings = settingRows | First %}
+
+    {% if settings.RunLavaValueId == empty or settings.CreatePersonId == empty or settings.SetEntityTypeId == empty or settings.CompleteStatusId == empty %}
+      <div class="alert alert-danger">STOP: required native workflow action settings were not resolved.</div>
+    {% else %}
+    {% attribute where:'EntityTypeId == {{ system.ConnectionRequestEntityTypeId }} && Key == "{{ sourceRegistrationTargetAttributeKey }}"' limit:'1' securityenabled:'false' %}
+      {% assign sourceRegistrationTargetAttribute = attributeItems | First %}
+    {% endattribute %}
+    {% attribute where:'EntityTypeId == {{ system.ConnectionRequestEntityTypeId }} && Key == "{{ mappedTargetAttributeKey }}"' limit:'1' securityenabled:'false' %}
+      {% assign mappedTargetAttribute = attributeItems | First %}
+    {% endattribute %}
+
+    {% if sourceRegistrationTargetAttribute.Id == empty or mappedTargetAttribute.Id == empty %}
+      <div class="alert alert-danger">
+        STOP: create the configured Connection Request target attributes before deploying.
+      </div>
+    {% else %}
+      {%- comment -%} Create/update WorkflowType and re-query its canonical ID. {%- endcomment -%}
+      {% sql return:'existingWorkflowRows' %}
+        SELECT TOP 1 Id
+        FROM WorkflowType
+        WHERE [ForeignKey] = '{{ deployForeignKeyPrefix }}:workflow-type'
+           OR ([ForeignKey] IS NULL AND [Name] = '{{ workflowTypeName }}')
+        ORDER BY CASE WHEN [ForeignKey] = '{{ deployForeignKeyPrefix }}:workflow-type' THEN 0 ELSE 1 END, Id;
+      {% endsql %}
+      {% assign existingWorkflow = existingWorkflowRows | First %}
+
+      {% modifyworkflowtype id:'{{ existingWorkflow.Id | Default:0 }}' securityenabled:'false' %}
+        [[ property name:'Name' ]]{{ workflowTypeName }}[[ endproperty ]]
+        [[ property name:'Description' ]]Creates a follow-up Connection Request for each selected registration registrant and preserves reviewed source context.[[ endproperty ]]
+        [[ property name:'IsActive' ]]True[[ endproperty ]]
+        [[ property name:'IsPersisted' ]]True[[ endproperty ]]
+        [[ property name:'WorkTerm' ]]Intake Request[[ endproperty ]]
+        [[ property name:'IconCssClass' ]]fa fa-random[[ endproperty ]]
+        [[ property name:'Order' ]]0[[ endproperty ]]
+        [[ property name:'LoggingLevel' ]]1[[ endproperty ]]
+        [[ property name:'WorkflowIdPrefix' ]]IRC[[ endproperty ]]
+        [[ property name:'ForeignKey' ]]{{ deployForeignKeyPrefix }}:workflow-type[[ endproperty ]]
+      {% endmodifyworkflowtype %}
+      {% if ModifyResult.Success == false %}
+        <div class="alert alert-danger">STOP: WorkflowType write failed: {{ ModifyResult.ErrorMessage }}</div>
+      {% endif %}
+
+      {% sql return:'canonicalWorkflowRows' %}
+        SELECT TOP 1 Id, Guid, [Name]
+        FROM WorkflowType
+        WHERE [ForeignKey] = '{{ deployForeignKeyPrefix }}:workflow-type';
+      {% endsql %}
+      {% assign canonicalWorkflow = canonicalWorkflowRows | First %}
+      {% assign workflowTypeId = canonicalWorkflow.Id | Default:0 | AsInteger %}
+
+      {% if workflowTypeId == 0 %}
+        <div class="alert alert-danger">STOP: canonical WorkflowType was not resolved after modify.</div>
+      {% else %}
+        <div class="alert alert-info">WorkflowType {{ workflowTypeId }}: {{ canonicalWorkflow.Name }}</div>
+
+        {%- comment -%} Workflow attributes, qualified to this WorkflowType. {%- endcomment -%}
+        {% capture workflowAttributeRows %}
+RegistrationRegistrantId||Registration Registrant Id||{{ system.IntegerFieldTypeId }}||0||
+Person||Person||{{ system.PersonFieldTypeId }}||1||
+Campus||Campus||{{ system.CampusFieldTypeId }}||2||
+ConnectionOpportunity||Connection Opportunity||{{ system.ConnectionOpportunityFieldTypeId }}||3||{{ connectionOpportunityGuid }}
+ConnectionStatus||Connection Status||{{ system.ConnectionStatusFieldTypeId }}||4||{{ connectionStatusGuid }}
+ConnectionRequest||Connection Request||{{ system.ConnectionRequestFieldTypeId }}||5||
+RequestComments||Request Comments||{{ system.MemoFieldTypeId }}||6||
+SourceRegistrationId||Source Registration ID||{{ system.IntegerFieldTypeId }}||7||
+MappedValue||Mapped Value||{{ system.MemoFieldTypeId }}||8||
+        {% endcapture %}
+        {% assign workflowAttributeLines = workflowAttributeRows | Strip | Split:'\n' %}
+        {% for line in workflowAttributeLines %}
+          {% assign parts = line | Split:'||' %}
+          {% assign attributeKey = parts[0] | Strip %}
+          {% assign attributeName = parts[1] | Strip %}
+          {% assign fieldTypeId = parts[2] | Strip %}
+          {% assign attributeOrder = parts[3] | Strip %}
+          {% assign defaultValue = parts[4] | Strip %}
+          {% attribute where:'EntityTypeId == {{ system.WorkflowEntityTypeId }} && EntityTypeQualifierColumn == "WorkflowTypeId" && EntityTypeQualifierValue == "{{ workflowTypeId }}" && Key == "{{ attributeKey }}"' limit:'1' securityenabled:'false' %}
+            {% assign existingAttribute = attributeItems | First %}
+          {% endattribute %}
+          {% modifyattribute id:'{{ existingAttribute.Id | Default:0 }}' securityenabled:'false' %}
+            [[ property name:'EntityTypeId' ]]{{ system.WorkflowEntityTypeId }}[[ endproperty ]]
+            [[ property name:'EntityTypeQualifierColumn' ]]WorkflowTypeId[[ endproperty ]]
+            [[ property name:'EntityTypeQualifierValue' ]]{{ workflowTypeId }}[[ endproperty ]]
+            [[ property name:'FieldTypeId' ]]{{ fieldTypeId }}[[ endproperty ]]
+            [[ property name:'Key' ]]{{ attributeKey }}[[ endproperty ]]
+            [[ property name:'Name' ]]{{ attributeName }}[[ endproperty ]]
+            [[ property name:'Order' ]]{{ attributeOrder }}[[ endproperty ]]
+            [[ property name:'DefaultValue' ]]{{ defaultValue }}[[ endproperty ]]
+            [[ property name:'IsGridColumn' ]]False[[ endproperty ]]
+            [[ property name:'IsRequired' ]]False[[ endproperty ]]
+            [[ property name:'IsActive' ]]True[[ endproperty ]]
+            [[ property name:'EnableHistory' ]]True[[ endproperty ]]
+            [[ property name:'ForeignKey' ]]{{ deployForeignKeyPrefix }}:attr:{{ attributeKey }}[[ endproperty ]]
+          {% endmodifyattribute %}
+          {% if ModifyResult.Success == false %}
+            <div class="alert alert-danger">Attribute {{ attributeKey }} failed: {{ ModifyResult.ErrorMessage }}</div>
+          {% endif %}
+        {% endfor %}
+
+        {% attribute where:'EntityTypeId == {{ system.WorkflowEntityTypeId }} && EntityTypeQualifierColumn == "WorkflowTypeId" && EntityTypeQualifierValue == "{{ workflowTypeId }}"' securityenabled:'false' %}
+          {% assign workflowAttributes = attributeItems %}
+        {% endattribute %}
+        {% assign attrRegistrationRegistrantId = workflowAttributes | Where:'Key','RegistrationRegistrantId' | First %}
+        {% assign attrPerson = workflowAttributes | Where:'Key','Person' | First %}
+        {% assign attrCampus = workflowAttributes | Where:'Key','Campus' | First %}
+        {% assign attrOpportunity = workflowAttributes | Where:'Key','ConnectionOpportunity' | First %}
+        {% assign attrStatus = workflowAttributes | Where:'Key','ConnectionStatus' | First %}
+        {% assign attrConnectionRequest = workflowAttributes | Where:'Key','ConnectionRequest' | First %}
+        {% assign attrComments = workflowAttributes | Where:'Key','RequestComments' | First %}
+        {% assign attrSourceRegistrationId = workflowAttributes | Where:'Key','SourceRegistrationId' | First %}
+        {% assign attrMappedValue = workflowAttributes | Where:'Key','MappedValue' | First %}
+
+        {% if attrPerson.Id == empty or attrConnectionRequest.Id == empty or attrMappedValue.Id == empty %}
+          <div class="alert alert-danger">STOP: canonical workflow attributes were not resolved after modify.</div>
+        {% else %}
+          {%- comment -%} One activated Start activity. {%- endcomment -%}
+          {% sql return:'existingActivityRows' %}
+            SELECT TOP 1 Id
+            FROM WorkflowActivityType
+            WHERE WorkflowTypeId = {{ workflowTypeId }}
+              AND ([ForeignKey] = '{{ deployForeignKeyPrefix }}:activity:start' OR [Name] = 'Start')
+            ORDER BY CASE WHEN [ForeignKey] = '{{ deployForeignKeyPrefix }}:activity:start' THEN 0 ELSE 1 END, Id;
+          {% endsql %}
+          {% assign existingActivity = existingActivityRows | First %}
+          {% modifyworkflowactivitytype id:'{{ existingActivity.Id | Default:0 }}' securityenabled:'false' %}
+            [[ property name:'WorkflowTypeId' ]]{{ workflowTypeId }}[[ endproperty ]]
+            [[ property name:'Name' ]]Start[[ endproperty ]]
+            [[ property name:'Description' ]]Resolve registrant context, create the request, copy reviewed values, and complete.[[ endproperty ]]
+            [[ property name:'IsActive' ]]True[[ endproperty ]]
+            [[ property name:'IsActivatedWithWorkflow' ]]True[[ endproperty ]]
+            [[ property name:'Order' ]]0[[ endproperty ]]
+            [[ property name:'ForeignKey' ]]{{ deployForeignKeyPrefix }}:activity:start[[ endproperty ]]
+          {% endmodifyworkflowactivitytype %}
+          {% sql return:'canonicalActivityRows' %}
+            SELECT TOP 1 Id
+            FROM WorkflowActivityType
+            WHERE WorkflowTypeId = {{ workflowTypeId }}
+              AND [ForeignKey] = '{{ deployForeignKeyPrefix }}:activity:start';
+          {% endsql %}
+          {% assign canonicalActivity = canonicalActivityRows | First %}
+          {% assign activityTypeId = canonicalActivity.Id | Default:0 | AsInteger %}
+
+          {% if activityTypeId == 0 %}
+            <div class="alert alert-danger">STOP: canonical Start activity was not resolved.</div>
+          {% else %}
+            {% assign open = '{{' %}
+            {% assign close = '}}' %}
+
+            {%- comment -%}
+            Read-only Run Lava actions. Each emits a raw value into one workflow
+            attribute. The source keys are trusted deploy configuration, not
+            browser input.
+            {%- endcomment -%}
+            {% capture readActionRows %}
+Set Person from Registrant||0||Person||person
+Set Campus from Registration||10||Campus||campus
+Read Source Registration ID||20||SourceRegistrationId||registration
+Read Request Comments||30||RequestComments||comments
+Read Mapped Value||31||MappedValue||mapped
+            {% endcapture %}
+            {% assign readActionLines = readActionRows | Strip | Split:'\n' %}
+            {% for line in readActionLines %}
+              {% assign parts = line | Split:'||' %}
+              {% assign actionName = parts[0] | Strip %}
+              {% assign actionOrder = parts[1] | Strip %}
+              {% assign targetKey = parts[2] | Strip %}
+              {% assign readMode = parts[3] | Strip %}
+              {% assign targetAttribute = workflowAttributes | Where:'Key',targetKey | First %}
+
+              {% case readMode %}
+                {% when 'person' %}
+                  {% capture runtimeLava %}{% raw %}{%- assign registrantId = Workflow | Attribute:'RegistrationRegistrantId','RawValue' -%}
+{%- registrationregistrant id:'{{ registrantId }}' securityenabled:'false' -%}
+  {{- registrationregistrant.PersonAlias.Guid -}}
+{%- endregistrationregistrant -%}{% endraw %}{% endcapture %}
+                {% when 'campus' %}
+                  {% capture runtimeLava %}{% raw %}{%- assign registrantId = Workflow | Attribute:'RegistrationRegistrantId','RawValue' -%}
+{%- registrationregistrant id:'{{ registrantId }}' securityenabled:'false' -%}
+  {{- registrationregistrant.Registration.Campus.Guid -}}
+{%- endregistrationregistrant -%}{% endraw %}{% endcapture %}
+                {% when 'registration' %}
+                  {% capture runtimeLava %}{% raw %}{%- assign registrantId = Workflow | Attribute:'RegistrationRegistrantId','RawValue' -%}
+{%- registrationregistrant id:'{{ registrantId }}' securityenabled:'false' -%}
+  {{- registrationregistrant.RegistrationId -}}
+{%- endregistrationregistrant -%}{% endraw %}{% endcapture %}
+                {% when 'comments' %}
+                  {% capture runtimeLava %}{% raw %}{%- assign registrantId = Workflow | Attribute:'RegistrationRegistrantId','RawValue' -%}
+{%- registrationregistrant id:'{{ registrantId }}' securityenabled:'false' -%}
+  {{- registrationregistrant | Attribute:'{% endraw %}{{ requestCommentsSourceAttributeKey }}{% raw %}','RawValue' -}}
+{%- endregistrationregistrant -%}{% endraw %}{% endcapture %}
+                {% when 'mapped' %}
+                  {% capture runtimeLava %}{% raw %}{%- assign registrantId = Workflow | Attribute:'RegistrationRegistrantId','RawValue' -%}
+{%- registrationregistrant id:'{{ registrantId }}' securityenabled:'false' -%}
+  {{- registrationregistrant | Attribute:'{% endraw %}{{ mappedSourceAttributeKey }}{% raw %}','RawValue' -}}
+{%- endregistrationregistrant -%}{% endraw %}{% endcapture %}
+              {% endcase %}
+
+              {% assign actionForeignKey = deployForeignKeyPrefix | Append:':action:read:' | Append:targetKey %}
+              {% sql return:'existingActionRows' %}
+                SELECT TOP 1 Id FROM WorkflowActionType
+                WHERE ActivityTypeId = {{ activityTypeId }} AND [ForeignKey] = '{{ actionForeignKey }}';
+              {% endsql %}
+              {% assign existingAction = existingActionRows | First %}
+              {% modifyworkflowactiontype id:'{{ existingAction.Id | Default:0 }}' securityenabled:'false' %}
+                [[ property name:'ActivityTypeId' ]]{{ activityTypeId }}[[ endproperty ]]
+                [[ property name:'EntityTypeId' ]]{{ system.RunLavaEntityTypeId }}[[ endproperty ]]
+                [[ property name:'Name' ]]{{ actionName }}[[ endproperty ]]
+                [[ property name:'Order' ]]{{ actionOrder }}[[ endproperty ]]
+                [[ property name:'IsActionCompletedOnSuccess' ]]True[[ endproperty ]]
+                [[ property name:'IsActivityCompletedOnSuccess' ]]False[[ endproperty ]]
+                [[ property name:'ForeignKey' ]]{{ actionForeignKey }}[[ endproperty ]]
+              {% endmodifyworkflowactiontype %}
+              {% sql return:'canonicalActionRows' %}
+                SELECT TOP 1 Id FROM WorkflowActionType
+                WHERE ActivityTypeId = {{ activityTypeId }} AND [ForeignKey] = '{{ actionForeignKey }}';
+              {% endsql %}
+              {% assign canonicalAction = canonicalActionRows | First %}
+              {% assign actionTypeId = canonicalAction.Id | Default:0 | AsInteger %}
+
+              {% if actionTypeId > 0 and targetAttribute.Guid != empty %}
+                {% attributevalue where:'AttributeId == {{ settings.RunLavaValueId }} && EntityId == {{ actionTypeId }}' limit:'1' securityenabled:'false' %}{% assign valueSetting = attributevalueItems | First %}{% endattributevalue %}
+                {% modifyattributevalue id:'{{ valueSetting.Id | Default:0 }}' securityenabled:'false' %}
+                  [[ property name:'AttributeId' ]]{{ settings.RunLavaValueId }}[[ endproperty ]]
+                  [[ property name:'EntityId' ]]{{ actionTypeId }}[[ endproperty ]]
+                  [[ property name:'Value' ]]{{ runtimeLava }}[[ endproperty ]]
+                {% endmodifyattributevalue %}
+                {% attributevalue where:'AttributeId == {{ settings.RunLavaAttributeId }} && EntityId == {{ actionTypeId }}' limit:'1' securityenabled:'false' %}{% assign attributeSetting = attributevalueItems | First %}{% endattributevalue %}
+                {% modifyattributevalue id:'{{ attributeSetting.Id | Default:0 }}' securityenabled:'false' %}
+                  [[ property name:'AttributeId' ]]{{ settings.RunLavaAttributeId }}[[ endproperty ]]
+                  [[ property name:'EntityId' ]]{{ actionTypeId }}[[ endproperty ]]
+                  [[ property name:'Value' ]]{{ targetAttribute.Guid }}[[ endproperty ]]
+                {% endmodifyattributevalue %}
+                {% attributevalue where:'AttributeId == {{ settings.RunLavaOrderId }} && EntityId == {{ actionTypeId }}' limit:'1' securityenabled:'false' %}{% assign orderSetting = attributevalueItems | First %}{% endattributevalue %}
+                {% modifyattributevalue id:'{{ orderSetting.Id | Default:0 }}' securityenabled:'false' %}
+                  [[ property name:'AttributeId' ]]{{ settings.RunLavaOrderId }}[[ endproperty ]]
+                  [[ property name:'EntityId' ]]{{ actionTypeId }}[[ endproperty ]]
+                  [[ property name:'Value' ]]{{ actionOrder }}[[ endproperty ]]
+                {% endmodifyattributevalue %}
+                {% attributevalue where:'AttributeId == {{ settings.RunLavaActiveId }} && EntityId == {{ actionTypeId }}' limit:'1' securityenabled:'false' %}{% assign activeSetting = attributevalueItems | First %}{% endattributevalue %}
+                {% modifyattributevalue id:'{{ activeSetting.Id | Default:0 }}' securityenabled:'false' %}
+                  [[ property name:'AttributeId' ]]{{ settings.RunLavaActiveId }}[[ endproperty ]]
+                  [[ property name:'EntityId' ]]{{ actionTypeId }}[[ endproperty ]]
+                  [[ property name:'Value' ]]False[[ endproperty ]]
+                {% endmodifyattributevalue %}
+                {% attributevalue where:'AttributeId == {{ settings.RunLavaCommandsId }} && EntityId == {{ actionTypeId }}' limit:'1' securityenabled:'false' %}{% assign commandSetting = attributevalueItems | First %}{% endattributevalue %}
+                {% modifyattributevalue id:'{{ commandSetting.Id | Default:0 }}' securityenabled:'false' %}
+                  [[ property name:'AttributeId' ]]{{ settings.RunLavaCommandsId }}[[ endproperty ]]
+                  [[ property name:'EntityId' ]]{{ actionTypeId }}[[ endproperty ]]
+                  [[ property name:'Value' ]]RockEntity[[ endproperty ]]
+                {% endmodifyattributevalue %}
+              {% else %}
+                <div class="alert alert-danger">Read action {{ targetKey }} was not fully resolved.</div>
+              {% endif %}
+            {% endfor %}
+
+            {%- comment -%} Native Create Connection Request action. {%- endcomment -%}
+            {% assign createForeignKey = deployForeignKeyPrefix | Append:':action:create-request' %}
+            {% sql return:'existingCreateRows' %}
+              SELECT TOP 1 Id FROM WorkflowActionType
+              WHERE ActivityTypeId = {{ activityTypeId }} AND [ForeignKey] = '{{ createForeignKey }}';
+            {% endsql %}
+            {% assign existingCreate = existingCreateRows | First %}
+            {% modifyworkflowactiontype id:'{{ existingCreate.Id | Default:0 }}' securityenabled:'false' %}
+              [[ property name:'ActivityTypeId' ]]{{ activityTypeId }}[[ endproperty ]]
+              [[ property name:'EntityTypeId' ]]{{ system.CreateRequestEntityTypeId }}[[ endproperty ]]
+              [[ property name:'Name' ]]Create Follow-up Connection Request[[ endproperty ]]
+              [[ property name:'Order' ]]50[[ endproperty ]]
+              [[ property name:'IsActionCompletedOnSuccess' ]]True[[ endproperty ]]
+              [[ property name:'IsActivityCompletedOnSuccess' ]]False[[ endproperty ]]
+              [[ property name:'ForeignKey' ]]{{ createForeignKey }}[[ endproperty ]]
+            {% endmodifyworkflowactiontype %}
+            {% sql return:'canonicalCreateRows' %}
+              SELECT TOP 1 Id FROM WorkflowActionType
+              WHERE ActivityTypeId = {{ activityTypeId }} AND [ForeignKey] = '{{ createForeignKey }}';
+            {% endsql %}
+            {% assign canonicalCreate = canonicalCreateRows | First %}
+            {% assign createActionTypeId = canonicalCreate.Id | Default:0 | AsInteger %}
+
+            {% capture createSettingRows %}
+{{ settings.CreatePersonId }}||{{ attrPerson.Guid }}
+{{ settings.CreateOpportunityId }}||{{ attrOpportunity.Guid }}
+{{ settings.CreateStatusId }}||{{ attrStatus.Guid }}
+{{ settings.CreateCampusId }}||{{ attrCampus.Guid }}
+{{ settings.CreateCommentId }}||{{ attrComments.Guid }}
+{{ settings.CreateOutputId }}||{{ attrConnectionRequest.Guid }}
+{{ settings.CreateOrderId }}||50
+{{ settings.CreateActiveId }}||False
+            {% endcapture %}
+            {% assign createSettingLines = createSettingRows | Strip | Split:'\n' %}
+            {% for line in createSettingLines %}
+              {% assign parts = line | Split:'||' %}
+              {% assign settingAttributeId = parts[0] | Strip %}
+              {% assign settingValue = parts[1] | Strip %}
+              {% attributevalue where:'AttributeId == {{ settingAttributeId }} && EntityId == {{ createActionTypeId }}' limit:'1' securityenabled:'false' %}{% assign existingSetting = attributevalueItems | First %}{% endattributevalue %}
+              {% modifyattributevalue id:'{{ existingSetting.Id | Default:0 }}' securityenabled:'false' %}
+                [[ property name:'AttributeId' ]]{{ settingAttributeId }}[[ endproperty ]]
+                [[ property name:'EntityId' ]]{{ createActionTypeId }}[[ endproperty ]]
+                [[ property name:'Value' ]]{{ settingValue }}[[ endproperty ]]
+              {% endmodifyattributevalue %}
+            {% endfor %}
+
+            {%- comment -%} Copy source ID and one example mapped value. {%- endcomment -%}
+            {% capture transferActionRows %}
+Set Source Registration ID||60||{{ sourceRegistrationTargetAttributeKey }}||SourceRegistrationId
+Set Mapped Value||61||{{ mappedTargetAttributeKey }}||MappedValue
+            {% endcapture %}
+            {% assign transferActionLines = transferActionRows | Strip | Split:'\n' %}
+            {% for line in transferActionLines %}
+              {% assign parts = line | Split:'||' %}
+              {% assign actionName = parts[0] | Strip %}
+              {% assign actionOrder = parts[1] | Strip %}
+              {% assign targetKey = parts[2] | Strip %}
+              {% assign sourceKey = parts[3] | Strip %}
+              {% assign setForeignKey = deployForeignKeyPrefix | Append:':action:set:' | Append:targetKey %}
+              {% capture runtimeEntityValue %}{{ open }} Workflow | Attribute:'ConnectionRequest','RawValue' {{ close }}{% endcapture %}
+              {% capture runtimeAttributeValue %}{{ open }} Workflow | Attribute:'{{ sourceKey }}','RawValue' {{ close }}{% endcapture %}
+
+              {% sql return:'existingSetRows' %}
+                SELECT TOP 1 Id FROM WorkflowActionType
+                WHERE ActivityTypeId = {{ activityTypeId }} AND [ForeignKey] = '{{ setForeignKey }}';
+              {% endsql %}
+              {% assign existingSet = existingSetRows | First %}
+              {% modifyworkflowactiontype id:'{{ existingSet.Id | Default:0 }}' securityenabled:'false' %}
+                [[ property name:'ActivityTypeId' ]]{{ activityTypeId }}[[ endproperty ]]
+                [[ property name:'EntityTypeId' ]]{{ system.SetEntityAttributeEntityTypeId }}[[ endproperty ]]
+                [[ property name:'Name' ]]{{ actionName }}[[ endproperty ]]
+                [[ property name:'Order' ]]{{ actionOrder }}[[ endproperty ]]
+                [[ property name:'IsActionCompletedOnSuccess' ]]True[[ endproperty ]]
+                [[ property name:'IsActivityCompletedOnSuccess' ]]False[[ endproperty ]]
+                [[ property name:'ForeignKey' ]]{{ setForeignKey }}[[ endproperty ]]
+              {% endmodifyworkflowactiontype %}
+              {% sql return:'canonicalSetRows' %}
+                SELECT TOP 1 Id FROM WorkflowActionType
+                WHERE ActivityTypeId = {{ activityTypeId }} AND [ForeignKey] = '{{ setForeignKey }}';
+              {% endsql %}
+              {% assign canonicalSet = canonicalSetRows | First %}
+              {% assign setActionTypeId = canonicalSet.Id | Default:0 | AsInteger %}
+
+              {% capture setSettingRows %}
+{{ settings.SetEntityTypeId }}||{{ system.ConnectionRequestEntityTypeGuid }}
+{{ settings.SetEntityIdGuidId }}||{{ runtimeEntityValue }}
+{{ settings.SetAttributeKeyId }}||{{ targetKey }}
+{{ settings.SetAttributeValueId }}||{{ runtimeAttributeValue }}
+{{ settings.SetOrderId }}||{{ actionOrder }}
+{{ settings.SetActiveId }}||False
+              {% endcapture %}
+              {% assign setSettingLines = setSettingRows | Strip | Split:'\n' %}
+              {% for settingLine in setSettingLines %}
+                {% assign settingParts = settingLine | Split:'||' %}
+                {% assign settingAttributeId = settingParts[0] | Strip %}
+                {% assign settingValue = settingParts[1] | Strip %}
+                {% attributevalue where:'AttributeId == {{ settingAttributeId }} && EntityId == {{ setActionTypeId }}' limit:'1' securityenabled:'false' %}{% assign existingSetting = attributevalueItems | First %}{% endattributevalue %}
+                {% modifyattributevalue id:'{{ existingSetting.Id | Default:0 }}' securityenabled:'false' %}
+                  [[ property name:'AttributeId' ]]{{ settingAttributeId }}[[ endproperty ]]
+                  [[ property name:'EntityId' ]]{{ setActionTypeId }}[[ endproperty ]]
+                  [[ property name:'Value' ]]{{ settingValue }}[[ endproperty ]]
+                {% endmodifyattributevalue %}
+              {% endfor %}
+            {% endfor %}
+
+            {%- comment -%} Complete after request and attribute writes. {%- endcomment -%}
+            {% assign completeForeignKey = deployForeignKeyPrefix | Append:':action:complete' %}
+            {% sql return:'existingCompleteRows' %}
+              SELECT TOP 1 Id FROM WorkflowActionType
+              WHERE ActivityTypeId = {{ activityTypeId }} AND [ForeignKey] = '{{ completeForeignKey }}';
+            {% endsql %}
+            {% assign existingComplete = existingCompleteRows | First %}
+            {% modifyworkflowactiontype id:'{{ existingComplete.Id | Default:0 }}' securityenabled:'false' %}
+              [[ property name:'ActivityTypeId' ]]{{ activityTypeId }}[[ endproperty ]]
+              [[ property name:'EntityTypeId' ]]{{ system.CompleteWorkflowEntityTypeId }}[[ endproperty ]]
+              [[ property name:'Name' ]]Complete Workflow[[ endproperty ]]
+              [[ property name:'Order' ]]90[[ endproperty ]]
+              [[ property name:'IsActionCompletedOnSuccess' ]]True[[ endproperty ]]
+              [[ property name:'IsActivityCompletedOnSuccess' ]]True[[ endproperty ]]
+              [[ property name:'ForeignKey' ]]{{ completeForeignKey }}[[ endproperty ]]
+            {% endmodifyworkflowactiontype %}
+            {% sql return:'canonicalCompleteRows' %}
+              SELECT TOP 1 Id FROM WorkflowActionType
+              WHERE ActivityTypeId = {{ activityTypeId }} AND [ForeignKey] = '{{ completeForeignKey }}';
+            {% endsql %}
+            {% assign canonicalComplete = canonicalCompleteRows | First %}
+            {% assign completeActionTypeId = canonicalComplete.Id | Default:0 | AsInteger %}
+            {% capture completeSettingRows %}
+{{ settings.CompleteStatusId }}||Completed
+{{ settings.CompleteOrderId }}||90
+{{ settings.CompleteActiveId }}||False
+            {% endcapture %}
+            {% assign completeSettingLines = completeSettingRows | Strip | Split:'\n' %}
+            {% for line in completeSettingLines %}
+              {% assign parts = line | Split:'||' %}
+              {% assign settingAttributeId = parts[0] | Strip %}
+              {% assign settingValue = parts[1] | Strip %}
+              {% attributevalue where:'AttributeId == {{ settingAttributeId }} && EntityId == {{ completeActionTypeId }}' limit:'1' securityenabled:'false' %}{% assign existingSetting = attributevalueItems | First %}{% endattributevalue %}
+              {% modifyattributevalue id:'{{ existingSetting.Id | Default:0 }}' securityenabled:'false' %}
+                [[ property name:'AttributeId' ]]{{ settingAttributeId }}[[ endproperty ]]
+                [[ property name:'EntityId' ]]{{ completeActionTypeId }}[[ endproperty ]]
+                [[ property name:'Value' ]]{{ settingValue }}[[ endproperty ]]
+              {% endmodifyattributevalue %}
+            {% endfor %}
+
+            {%- comment -%}
+            Final shape check. InvalidReferenceCount must be zero. This catches
+            copied GUIDs that belong to another workflow or stale environment.
+            {%- endcomment -%}
+            {% sql return:'verificationRows' %}
+              SELECT
+                (SELECT COUNT(*) FROM WorkflowType WHERE [ForeignKey] = '{{ deployForeignKeyPrefix }}:workflow-type') AS WorkflowTypeCount,
+                (SELECT COUNT(*) FROM WorkflowActivityType WHERE WorkflowTypeId = {{ workflowTypeId }} AND [ForeignKey] = '{{ deployForeignKeyPrefix }}:activity:start') AS ActivityCount,
+                (SELECT COUNT(*) FROM WorkflowActionType WHERE ActivityTypeId = {{ activityTypeId }} AND [ForeignKey] LIKE '{{ deployForeignKeyPrefix }}:action:%') AS ActionCount,
+                (SELECT COUNT(*) FROM Attribute WHERE EntityTypeId = {{ system.WorkflowEntityTypeId }} AND EntityTypeQualifierColumn = 'WorkflowTypeId' AND EntityTypeQualifierValue = CONVERT(varchar(20), {{ workflowTypeId }}) AND [ForeignKey] LIKE '{{ deployForeignKeyPrefix }}:attr:%') AS WorkflowAttributeCount,
+                (
+                  SELECT COUNT(*)
+                  FROM AttributeValue av
+                  INNER JOIN Attribute settingAttribute ON settingAttribute.Id = av.AttributeId
+                  LEFT JOIN Attribute referencedAttribute ON referencedAttribute.Guid = TRY_CONVERT(uniqueidentifier, av.Value)
+                  WHERE av.EntityId = {{ createActionTypeId }}
+                    AND settingAttribute.[Key] IN ('PersonAttribute','ConnectionOpportunityAttribute','ConnectionStatusAttribute','CampusAttribute','ConnectionCommentAttribute','ConnectionRequestAttribute')
+                    AND (
+                      referencedAttribute.Id IS NULL
+                      OR referencedAttribute.EntityTypeId <> {{ system.WorkflowEntityTypeId }}
+                      OR referencedAttribute.EntityTypeQualifierColumn <> 'WorkflowTypeId'
+                      OR referencedAttribute.EntityTypeQualifierValue <> CONVERT(varchar(20), {{ workflowTypeId }})
+                    )
+                ) AS InvalidReferenceCount;
+            {% endsql %}
+            {% assign verification = verificationRows | First %}
+            <h2>Verification</h2>
+            <ul>
+              <li>Workflow types: {{ verification.WorkflowTypeCount }}</li>
+              <li>Start activities: {{ verification.ActivityCount }}</li>
+              <li>Managed actions: {{ verification.ActionCount }}</li>
+              <li>Managed workflow attributes: {{ verification.WorkflowAttributeCount }}</li>
+              <li>Invalid Create Request references: {{ verification.InvalidReferenceCount }}</li>
+            </ul>
+            <div class="alert alert-warning">
+              Review this workflow, rerun the deploy to prove stable reuse, and only then assign it as the registration template's Registrant Workflow.
+            </div>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+    {% endif %}
+    {% endif %}
+  {% endif %}
+{% endunless %}

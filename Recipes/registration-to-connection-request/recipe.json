@@ -1,0 +1,28 @@
+{
+  "schema": "rock-kb-external-recipe-v1",
+  "recipe_id": "oneall:registration-to-connection-request",
+  "org_id": "oneall",
+  "title": "Registration-to-Connection Request Transfer Workflow",
+  "summary": "Create a Connection Request for each selected registration registrant, preserve source traceability, copy registration campus explicitly, and transfer reviewed attributes through native Rock workflow actions.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "entrypoint": "src/workflowtype-deploy.lava",
+  "concept_ids": [
+    "workflows",
+    "event-registration",
+    "connections",
+    "lava",
+    "security-permissions",
+    "people-families"
+  ],
+  "source_ref": "main",
+  "files": [
+    "README.md",
+    "LICENSE",
+    "config/mapping.example.json",
+    "src/workflowtype-deploy.lava",
+    "tests/verify-transfer.sql",
+    "tests/static_contract.py"
+  ]
+}
+
