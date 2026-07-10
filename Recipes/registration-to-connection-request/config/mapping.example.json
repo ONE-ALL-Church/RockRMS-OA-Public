@@ -1,0 +1,36 @@
+{
+  "schema": "rock-registration-to-connection-mapping-v1",
+  "workflow": {
+    "name": "Intake Registration to Follow-up Connection Request",
+    "foreignKeyPrefix": "example:intake-registration-to-connection",
+    "connectionOpportunityGuid": "",
+    "connectionStatusGuid": "",
+    "copyRegistrationCampus": true,
+    "sourceRegistrationTargetAttributeKey": "SourceRegistrationId"
+  },
+  "comments": {
+    "sourceRegistrantAttributeKey": "FollowUpNotes",
+    "required": false
+  },
+  "attributeMappings": [
+    {
+      "sourceScope": "registration_registrant_attribute",
+      "sourceAttributeKey": "IntakeSummary",
+      "workflowAttributeKey": "MappedValue",
+      "targetScope": "connection_request_attribute",
+      "targetAttributeKey": "IntakeSummary",
+      "sourceFieldType": "Memo",
+      "targetFieldType": "Memo",
+      "required": false,
+      "normalization": "none"
+    }
+  ],
+  "duplicatePolicy": "stop_and_review",
+  "notes": [
+    "Create target Connection Request attributes before deploying the workflow.",
+    "Mirror these values in the ADAPTATION REQUIRED block in workflowtype-deploy.lava.",
+    "Do not store a full environment-specific registration URL; store the numeric Registration ID and construct links at render time.",
+    "Do not add a mapping unless staff need the value and permissions cover the resulting Connection Request attribute."
+  ]
+}
+
