@@ -1,0 +1,29 @@
+{
+  "schema": "rock-kb-external-recipe-v1",
+  "recipe_id": "oneall:workflow-backed-sms-verification",
+  "org_id": "oneall",
+  "title": "Workflow-Backed SMS Verification for Anonymous Rock Forms",
+  "summary": "Optionally recognize an existing person during an anonymous form using an exact unique match, persisted workflow challenge, bounded SMS code, and single-use server-side final recheck.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "entrypoint": "src/verify-start.lava",
+  "concept_ids": [
+    "security-permissions",
+    "workflows",
+    "event-registration",
+    "people-families",
+    "communications",
+    "lava"
+  ],
+  "source_ref": "main",
+  "files": [
+    "README.md",
+    "LICENSE",
+    "config/configuration.example.json",
+    "config/workflow-attributes.md",
+    "src/verify-start.lava",
+    "src/verify-check.lava",
+    "src/final-submit-recheck.lava",
+    "tests/static_contract.py"
+  ]
+}

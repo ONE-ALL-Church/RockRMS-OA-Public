@@ -1,0 +1,95 @@
+{% comment %}
+  POST reference endpoint. It marks a challenge verified but never returns a
+  person or alias identifier to the browser.
+{% endcomment %}
+{% assign workflowTypeGuid = ConfigurationRigging.verificationWorkflowTypeGuid | Default:'' | Trim %}
+{% assign intendedAction = ConfigurationRigging.intendedAction | Default:'' | Trim %}
+{% assign maxAttempts = ConfigurationRigging.maxAttempts | Default:5 | AsInteger %}
+{% assign verificationSession = Form.verificationSession | Trim %}
+{% assign verificationCode = Form.verificationCode | Trim %}
+{% assign isVerified = false %}
+
+{% if workflowTypeGuid != '' and intendedAction != '' and verificationSession != '' and verificationCode != '' %}
+{% sql return:'verification' sessionGuid:'{{ verificationSession }}' code:'{{ verificationCode }}' actionKey:'{{ intendedAction }}' workflowTypeGuid:'{{ workflowTypeGuid }}' maxAttempts:'{{ maxAttempts }}' %}
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+DECLARE @SessionGuid nvarchar(50) = @sessionGuid;
+DECLARE @Code nvarchar(20) = LTRIM(RTRIM(@code));
+DECLARE @ActionKey nvarchar(100) = @actionKey;
+DECLARE @WorkflowTypeGuid uniqueidentifier = TRY_CONVERT(uniqueidentifier, @workflowTypeGuid);
+DECLARE @MaxAttempts int = CASE WHEN TRY_CONVERT(int, @maxAttempts) BETWEEN 1 AND 10 THEN TRY_CONVERT(int, @maxAttempts) ELSE 5 END;
+DECLARE @WorkflowEntityTypeId int = (SELECT TOP 1 Id FROM EntityType WHERE [Name] = 'Rock.Model.Workflow');
+DECLARE @WorkflowId int;
+DECLARE @CodeHash nvarchar(100);
+DECLARE @ExpiresAt datetime;
+DECLARE @Attempts int;
+DECLARE @Verified bit;
+DECLARE @ConsumedAt nvarchar(50);
+DECLARE @ExpectedHash varchar(64) = CONVERT(varchar(64), HASHBYTES('SHA2_256', @Code + ':' + @SessionGuid), 2);
+DECLARE @IsValid bit = 0;
+
+SELECT TOP 1 @WorkflowId = w.Id
+FROM Workflow w WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN WorkflowType wt ON wt.Id = w.WorkflowTypeId
+INNER JOIN AttributeValue av ON av.EntityId = w.Id
+INNER JOIN Attribute a ON a.Id = av.AttributeId
+WHERE wt.[Guid] = @WorkflowTypeGuid
+  AND a.EntityTypeId = @WorkflowEntityTypeId
+  AND a.[Key] = 'SessionGuid'
+  AND av.Value = @SessionGuid;
+
+SELECT
+    @CodeHash = MAX(CASE WHEN a.[Key] = 'CodeHash' THEN av.Value END),
+    @ExpiresAt = TRY_CONVERT(datetime, MAX(CASE WHEN a.[Key] = 'ExpiresAt' THEN av.Value END)),
+    @Attempts = TRY_CONVERT(int, MAX(CASE WHEN a.[Key] = 'Attempts' THEN av.Value END)),
+    @Verified = CASE WHEN MAX(CASE WHEN a.[Key] = 'Verified' THEN av.Value END) = 'True' THEN 1 ELSE 0 END,
+    @ConsumedAt = MAX(CASE WHEN a.[Key] = 'ConsumedAt' THEN av.Value END)
+FROM AttributeValue av WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN Attribute a ON a.Id = av.AttributeId
+WHERE av.EntityId = @WorkflowId
+  AND a.EntityTypeId = @WorkflowEntityTypeId
+  AND a.[Key] IN ('CodeHash', 'ExpiresAt', 'Attempts', 'Verified', 'ConsumedAt', 'IntendedAction')
+HAVING MAX(CASE WHEN a.[Key] = 'IntendedAction' THEN av.Value END) = @ActionKey;
+
+SET @Attempts = ISNULL(@Attempts, 0);
+IF @WorkflowId IS NOT NULL
+   AND @Verified = 0
+   AND ISNULL(@ConsumedAt, '') = ''
+   AND @ExpiresAt >= GETDATE()
+   AND @Attempts < @MaxAttempts
+   AND UPPER(ISNULL(@CodeHash, '')) = UPPER(@ExpectedHash)
+BEGIN
+    SET @IsValid = 1;
+END;
+
+UPDATE av
+SET av.Value = CASE
+        WHEN a.[Key] = 'Attempts' THEN CONVERT(nvarchar(20), @Attempts + 1)
+        WHEN a.[Key] = 'Verified' AND @IsValid = 1 THEN 'True'
+        ELSE av.Value
+    END,
+    av.ModifiedDateTime = GETDATE()
+FROM AttributeValue av
+INNER JOIN Attribute a ON a.Id = av.AttributeId
+WHERE av.EntityId = @WorkflowId
+  AND a.EntityTypeId = @WorkflowEntityTypeId
+  AND a.[Key] IN ('Attempts', 'Verified');
+
+COMMIT TRANSACTION;
+SELECT @IsValid AS IsVerified;
+{% endsql %}
+{% assign verifiedValue = verification[0].IsVerified | ToString | Downcase %}
+{% if verifiedValue == 'true' or verifiedValue == '1' %}{% assign isVerified = true %}{% endif %}
+{% endif %}
+
+{% httpresponse %}
+[[ header key:'Content-Type' ]]text/html; charset=utf-8[[ endheader ]]
+[[ header key:'Cache-Control' ]]no-store[[ endheader ]]
+{% endhttpresponse %}
+{% if isVerified %}
+<div class="alert alert-success" role="status">Verification complete. Continue with the form.</div>
+<input type="hidden" name="verificationSession" value="{{ verificationSession | Escape }}">
+{% else %}
+<div class="alert alert-warning" role="alert">The code could not be verified. Request a new code or continue without verification.</div>
+{% endif %}

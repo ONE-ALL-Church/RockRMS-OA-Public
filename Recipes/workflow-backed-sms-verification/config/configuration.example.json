@@ -1,0 +1,9 @@
+{
+  "verificationWorkflowTypeGuid": "",
+  "intendedAction": "replace-with-form-action-key",
+  "mobilePhoneTypeValueId": 0,
+  "expiresMinutes": 10,
+  "maxAttempts": 5,
+  "maxSendsPerPersonPerHour": 3,
+  "maxSendsPerIpPerHour": 10
+}

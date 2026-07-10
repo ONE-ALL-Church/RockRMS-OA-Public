@@ -1,0 +1,95 @@
+{% comment %}
+  Read-only filter shell. Secure both this endpoint and the results endpoint
+  with ApplicationView and page permissions.
+{% endcomment %}
+{% assign defaultStatus = ConfigurationRigging.defaultStatus | Default:'all' | Downcase %}
+{% unless defaultStatus == '1' or defaultStatus == '2' or defaultStatus == '3' or defaultStatus == '4' %}
+  {% assign defaultStatus = 'all' %}
+{% endunless %}
+{% assign defaultPageSize = ConfigurationRigging.defaultPageSize | Default:25 | AsInteger %}
+{% unless defaultPageSize == 25 or defaultPageSize == 50 or defaultPageSize == 100 %}
+  {% assign defaultPageSize = 25 %}
+{% endunless %}
+
+<style>
+  .communication-history-filters { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin-bottom:16px; }
+  .communication-history-filters label { display:flex; flex-direction:column; gap:4px; }
+  .communication-history-loading { display:none; margin:8px 0; }
+  .communication-history-loading.htmx-request { display:block; }
+  .communication-history-status { white-space:nowrap; }
+</style>
+
+<form id="communication-history-filters" class="communication-history-filters">
+  <input type="hidden" id="communication-history-page" name="page" value="1">
+  <label>
+    Status
+    <select class="form-control" name="status" data-reset-page
+            hx-get="^/communication-history-active-search/results"
+            hx-trigger="change" hx-include="#communication-history-filters"
+            hx-target="#communication-history-results" hx-indicator="#communication-history-loading">
+      <option value="all" {% if defaultStatus == 'all' %}selected{% endif %}>All</option>
+      <option value="1" {% if defaultStatus == '1' %}selected{% endif %}>Draft</option>
+      <option value="2" {% if defaultStatus == '2' %}selected{% endif %}>Pending approval</option>
+      <option value="3" {% if defaultStatus == '3' %}selected{% endif %}>Approved</option>
+      <option value="4" {% if defaultStatus == '4' %}selected{% endif %}>Denied</option>
+    </select>
+  </label>
+  <label>
+    Type
+    <select class="form-control" name="type" data-reset-page
+            hx-get="^/communication-history-active-search/results"
+            hx-trigger="change" hx-include="#communication-history-filters"
+            hx-target="#communication-history-results" hx-indicator="#communication-history-loading">
+      <option value="all">All</option>
+      <option value="1">Email</option>
+      <option value="2">SMS</option>
+      <option value="3">Push notification</option>
+    </select>
+  </label>
+  <label>
+    Search subject or name
+    <input class="form-control" name="q" type="search" maxlength="120" data-reset-page
+           hx-get="^/communication-history-active-search/results"
+           hx-trigger="input changed delay:400ms, search"
+           hx-include="#communication-history-filters"
+           hx-target="#communication-history-results" hx-indicator="#communication-history-loading">
+  </label>
+  <label>
+    Rows
+    <select class="form-control" name="pageSize" data-reset-page
+            hx-get="^/communication-history-active-search/results"
+            hx-trigger="change" hx-include="#communication-history-filters"
+            hx-target="#communication-history-results" hx-indicator="#communication-history-loading">
+      <option value="25" {% if defaultPageSize == 25 %}selected{% endif %}>25</option>
+      <option value="50" {% if defaultPageSize == 50 %}selected{% endif %}>50</option>
+      <option value="100" {% if defaultPageSize == 100 %}selected{% endif %}>100</option>
+    </select>
+  </label>
+</form>
+
+<div id="communication-history-loading" class="communication-history-loading" role="status" aria-live="polite">
+  Refreshing communications...
+</div>
+<div id="communication-history-results">
+  {% renderlavaendpoint route:'^/communication-history-active-search/results?status={{ defaultStatus }}&pageSize={{ defaultPageSize }}' %}
+</div>
+
+<script>
+  (function () {
+    var filters = document.getElementById('communication-history-filters');
+    var page = document.getElementById('communication-history-page');
+    if (!filters || !page) return;
+
+    filters.addEventListener('input', function (event) {
+      if (event.target.matches('[data-reset-page]')) page.value = '1';
+    });
+    filters.addEventListener('change', function (event) {
+      if (event.target.matches('[data-reset-page]')) page.value = '1';
+    });
+  }());
+
+  function communicationHistoryPage(pageNumber) {
+    var page = document.getElementById('communication-history-page');
+    if (page) page.value = String(pageNumber);
+  }
+</script>

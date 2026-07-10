@@ -1,0 +1,82 @@
+{% comment %}
+  Insert immediately before the protected final action. The challenge is
+  consumed atomically and the person alias is resolved only on the server.
+  A failed downstream action requires a new challenge.
+{% endcomment %}
+{% assign workflowTypeGuid = ConfigurationRigging.verificationWorkflowTypeGuid | Default:'' | Trim %}
+{% assign intendedAction = ConfigurationRigging.intendedAction | Default:'' | Trim %}
+{% assign verificationSession = Form.verificationSession | Trim %}
+{% assign verifiedAliasGuid = '' %}
+
+{% if workflowTypeGuid != '' and intendedAction != '' and verificationSession != '' %}
+{% sql return:'consumedChallenge' sessionGuid:'{{ verificationSession }}' actionKey:'{{ intendedAction }}' workflowTypeGuid:'{{ workflowTypeGuid }}' %}
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+DECLARE @SessionGuid nvarchar(50) = @sessionGuid;
+DECLARE @ActionKey nvarchar(100) = @actionKey;
+DECLARE @WorkflowTypeGuid uniqueidentifier = TRY_CONVERT(uniqueidentifier, @workflowTypeGuid);
+DECLARE @WorkflowEntityTypeId int = (SELECT TOP 1 Id FROM EntityType WHERE [Name] = 'Rock.Model.Workflow');
+DECLARE @WorkflowId int;
+DECLARE @CandidateGuid nvarchar(50);
+DECLARE @ExpiresAt datetime;
+DECLARE @Verified bit;
+DECLARE @ConsumedAt nvarchar(50);
+
+SELECT TOP 1 @WorkflowId = w.Id
+FROM Workflow w WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN WorkflowType wt ON wt.Id = w.WorkflowTypeId
+INNER JOIN AttributeValue av ON av.EntityId = w.Id
+INNER JOIN Attribute a ON a.Id = av.AttributeId
+WHERE wt.[Guid] = @WorkflowTypeGuid
+  AND a.EntityTypeId = @WorkflowEntityTypeId
+  AND a.[Key] = 'SessionGuid'
+  AND av.Value = @SessionGuid;
+
+SELECT
+    @CandidateGuid = MAX(CASE WHEN a.[Key] = 'Candidate' THEN av.Value END),
+    @ExpiresAt = TRY_CONVERT(datetime, MAX(CASE WHEN a.[Key] = 'ExpiresAt' THEN av.Value END)),
+    @Verified = CASE WHEN MAX(CASE WHEN a.[Key] = 'Verified' THEN av.Value END) = 'True' THEN 1 ELSE 0 END,
+    @ConsumedAt = MAX(CASE WHEN a.[Key] = 'ConsumedAt' THEN av.Value END)
+FROM AttributeValue av WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN Attribute a ON a.Id = av.AttributeId
+WHERE av.EntityId = @WorkflowId
+  AND a.EntityTypeId = @WorkflowEntityTypeId
+  AND a.[Key] IN ('Candidate', 'ExpiresAt', 'Verified', 'ConsumedAt', 'IntendedAction')
+HAVING MAX(CASE WHEN a.[Key] = 'IntendedAction' THEN av.Value END) = @ActionKey;
+
+IF @WorkflowId IS NOT NULL AND @Verified = 1 AND @ExpiresAt >= GETDATE() AND ISNULL(@ConsumedAt, '') = ''
+BEGIN
+    UPDATE av
+    SET av.Value = CONVERT(varchar(19), GETDATE(), 120), av.ModifiedDateTime = GETDATE()
+    FROM AttributeValue av
+    INNER JOIN Attribute a ON a.Id = av.AttributeId
+    WHERE av.EntityId = @WorkflowId
+      AND a.EntityTypeId = @WorkflowEntityTypeId
+      AND a.[Key] = 'ConsumedAt'
+      AND ISNULL(av.Value, '') = '';
+
+    IF @@ROWCOUNT = 1
+    BEGIN
+        SELECT CAST(pa.[Guid] AS nvarchar(50)) AS AliasGuid
+        FROM PersonAlias pa
+        INNER JOIN Person p ON p.Id = pa.PersonId
+        WHERE pa.[Guid] = TRY_CONVERT(uniqueidentifier, @CandidateGuid)
+          AND p.PrimaryAliasId = pa.Id
+          AND ISNULL(p.IsDeceased, 0) = 0;
+    END;
+END;
+
+COMMIT TRANSACTION;
+{% endsql %}
+{% assign verifiedAliasGuid = consumedChallenge[0].AliasGuid | Default:'' | Trim %}
+{% endif %}
+
+{% if verifiedAliasGuid == '' %}
+  <div class="alert alert-warning" role="alert">Verification expired or could not be confirmed. Request a new code before continuing.</div>
+{% else %}
+  {% comment %}
+    Perform the intended server-side action here using verifiedAliasGuid.
+    Do not accept a person or alias identifier from the browser.
+  {% endcomment %}
+{% endif %}
