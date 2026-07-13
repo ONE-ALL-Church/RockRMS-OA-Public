@@ -1,0 +1,14 @@
+{
+  "registrationInstanceId": 0,
+  "priorRegistrationInstanceId": 0,
+  "capacityFallback": 0,
+  "registrantCampusAttributeId": 0,
+  "sourceAttributeId": 0,
+  "staffGroupId": 0,
+  "servingVerifierGroupId": 0,
+  "servingRootGroupId": 0,
+  "departmentGroupTypeId": 0,
+  "feeGroupNameContains": "",
+  "optionLabelSuffixMarker": "(Target Audience:",
+  "maxRegistrantRows": 500
+}

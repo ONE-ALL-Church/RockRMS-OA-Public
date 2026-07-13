@@ -1,0 +1,24 @@
+{
+  "schema": "rock-kb-external-recipe-v1",
+  "recipe_id": "oneall:event-registration-analytics-dashboard",
+  "org_id": "oneall",
+  "title": "Event Registration Analytics Dashboard",
+  "summary": "Build a secured read-only Helix dashboard for registration capacity, pace, wait list, optional segmentation, fee choices, demographics, and bounded participant drilldown.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "entrypoint": "src/dashboard.lava",
+  "concept_ids": [
+    "event-registration",
+    "lava",
+    "data-views-reports",
+    "security-permissions"
+  ],
+  "source_ref": "main",
+  "files": [
+    "README.md",
+    "LICENSE",
+    "config/configuration.example.json",
+    "src/dashboard.lava",
+    "tests/static_contract.py"
+  ]
+}
