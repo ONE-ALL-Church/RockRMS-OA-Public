@@ -1,0 +1,885 @@
+{% assign registrationInstanceId = ConfigurationRigging.registrationInstanceId | Default:'0' | AsInteger %}
+{% assign priorRegistrationInstanceId = ConfigurationRigging.priorRegistrationInstanceId | Default:'0' | AsInteger %}
+{% assign capacityFallback = ConfigurationRigging.capacityFallback | Default:'0' | AsInteger %}
+{% assign registrantCampusAttributeId = ConfigurationRigging.registrantCampusAttributeId | Default:'0' | AsInteger %}
+{% assign sourceAttributeId = ConfigurationRigging.sourceAttributeId | Default:'0' | AsInteger %}
+{% assign staffGroupId = ConfigurationRigging.staffGroupId | Default:'0' | AsInteger %}
+{% assign servingVerifierGroupId = ConfigurationRigging.servingVerifierGroupId | Default:'0' | AsInteger %}
+{% assign servingRootGroupId = ConfigurationRigging.servingRootGroupId | Default:'0' | AsInteger %}
+{% assign departmentGroupTypeId = ConfigurationRigging.departmentGroupTypeId | Default:'0' | AsInteger %}
+{% assign feeGroupNameContains = ConfigurationRigging.feeGroupNameContains | Default:'' %}
+{% assign optionLabelSuffixMarker = ConfigurationRigging.optionLabelSuffixMarker | Default:'' %}
+{% assign maxRegistrantRows = ConfigurationRigging.maxRegistrantRows | Default:'500' | AsInteger %}
+
+{% if registrationInstanceId <= 0 %}
+<div class="alert alert-warning" role="alert">
+    <strong>Adaptation required.</strong>
+    Set <code>registrationInstanceId</code> in this Lava Application's configuration rigging.
+</div>
+{% else %}
+
+{% sql return:'metricRows'
+    registrationInstanceId:'{{ registrationInstanceId }}'
+    priorRegistrationInstanceId:'{{ priorRegistrationInstanceId }}'
+    capacityFallback:'{{ capacityFallback }}'
+    registrantCampusAttributeId:'{{ registrantCampusAttributeId }}'
+    sourceAttributeId:'{{ sourceAttributeId }}'
+    staffGroupId:'{{ staffGroupId }}'
+    servingVerifierGroupId:'{{ servingVerifierGroupId }}' %}
+DECLARE @RegistrationInstanceId int = TRY_CONVERT(int, @registrationInstanceId);
+DECLARE @PriorRegistrationInstanceId int = TRY_CONVERT(int, @priorRegistrationInstanceId);
+DECLARE @CapacityFallback int = TRY_CONVERT(int, @capacityFallback);
+DECLARE @RegistrantCampusAttributeId int = TRY_CONVERT(int, @registrantCampusAttributeId);
+DECLARE @SourceAttributeId int = TRY_CONVERT(int, @sourceAttributeId);
+DECLARE @StaffGroupId int = TRY_CONVERT(int, @staffGroupId);
+DECLARE @ServingVerifierGroupId int = TRY_CONVERT(int, @servingVerifierGroupId);
+DECLARE @InstanceName nvarchar(200);
+DECLARE @CurrentEnd datetime;
+DECLARE @PriorEnd datetime;
+DECLARE @Capacity int;
+DECLARE @DaysRemaining int;
+DECLARE @PriorCutoff datetime;
+
+SELECT
+    @InstanceName = ri.Name,
+    @CurrentEnd = ri.EndDateTime,
+    @Capacity = COALESCE(ri.MaxAttendees, NULLIF(@CapacityFallback, 0), 0)
+FROM RegistrationInstance ri
+WHERE ri.Id = @RegistrationInstanceId;
+
+SELECT @PriorEnd = ri.EndDateTime
+FROM RegistrationInstance ri
+WHERE ri.Id = NULLIF(@PriorRegistrationInstanceId, 0);
+
+SET @DaysRemaining = CASE
+    WHEN @CurrentEnd IS NULL OR @CurrentEnd <= GETDATE() THEN 0
+    ELSE DATEDIFF(day, GETDATE(), @CurrentEnd)
+END;
+SET @PriorCutoff = CASE WHEN @PriorEnd IS NULL THEN NULL
+    ELSE DATEADD(day, -@DaysRemaining, @PriorEnd) END;
+
+;WITH Base AS (
+    SELECT
+        rr.Id AS RegistrantId,
+        rr.RegistrationId,
+        pa.PersonId,
+        rr.OnWaitList,
+        rr.CreatedDateTime,
+        COALESCE(
+            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200), avCampus.PersistedTextValue))), ''),
+            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200), avCampus.Value))), ''),
+            'Unknown'
+        ) AS CampusLabel,
+        COALESCE(
+            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200), avSource.PersistedTextValue))), ''),
+            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200), avSource.Value))), ''),
+            'Not provided'
+        ) AS SourceLabel,
+        CASE p.Gender WHEN 1 THEN 'Male' WHEN 2 THEN 'Female' ELSE 'Unknown' END AS GenderLabel,
+        CASE
+            WHEN p.BirthYear IS NULL THEN 'Unknown'
+            WHEN YEAR(GETDATE()) - p.BirthYear < 18 THEN 'Under 18'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 18 AND 24 THEN '18-24'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 25 AND 34 THEN '25-34'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 35 AND 44 THEN '35-44'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 45 AND 54 THEN '45-54'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 55 AND 64 THEN '55-64'
+            ELSE '65+'
+        END AS AgeBand,
+        CASE WHEN @StaffGroupId > 0 AND EXISTS (
+            SELECT 1
+            FROM GroupMember gm
+            WHERE gm.GroupId = @StaffGroupId
+              AND gm.PersonId = pa.PersonId
+              AND gm.GroupMemberStatus = 1
+              AND gm.IsArchived = 0
+        ) THEN 1 ELSE 0 END AS IsStaff,
+        CASE WHEN @ServingVerifierGroupId > 0 AND EXISTS (
+            SELECT 1
+            FROM GroupMember gm
+            WHERE gm.GroupId = @ServingVerifierGroupId
+              AND gm.PersonId = pa.PersonId
+              AND gm.GroupMemberStatus = 1
+              AND gm.IsArchived = 0
+        ) THEN 1 ELSE 0 END AS IsServingVerified
+    FROM RegistrationRegistrant rr
+    INNER JOIN Registration r ON r.Id = rr.RegistrationId
+    INNER JOIN PersonAlias pa ON pa.Id = rr.PersonAliasId
+    INNER JOIN Person p ON p.Id = pa.PersonId
+    LEFT JOIN AttributeValue avCampus
+        ON @RegistrantCampusAttributeId > 0
+       AND avCampus.AttributeId = @RegistrantCampusAttributeId
+       AND avCampus.EntityId = rr.Id
+    LEFT JOIN AttributeValue avSource
+        ON @SourceAttributeId > 0
+       AND avSource.AttributeId = @SourceAttributeId
+       AND avSource.EntityId = rr.Id
+    WHERE r.RegistrationInstanceId = @RegistrationInstanceId
+), Labeled AS (
+    SELECT
+        *,
+        CASE
+            WHEN @StaffGroupId <= 0 AND @ServingVerifierGroupId <= 0 THEN 'unclassified'
+            WHEN IsStaff = 1 THEN 'staff'
+            WHEN IsServingVerified = 1 THEN 'nonstaff-serving'
+            ELSE 'nonstaff-not-serving'
+        END AS SegmentKey,
+        CASE
+            WHEN @StaffGroupId <= 0 AND @ServingVerifierGroupId <= 0 THEN 'Not configured'
+            WHEN IsStaff = 1 THEN 'Staff'
+            WHEN IsServingVerified = 1 THEN 'Non-staff serving'
+            ELSE 'Non-staff not serving'
+        END AS SegmentLabel
+    FROM Base
+), CurrentStats AS (
+    SELECT
+        SUM(CASE WHEN OnWaitList = 0 THEN 1 ELSE 0 END) AS ConfirmedPeople,
+        COUNT(DISTINCT CASE WHEN OnWaitList = 0 THEN RegistrationId END) AS ConfirmedRegistrations,
+        SUM(CASE WHEN OnWaitList = 1 THEN 1 ELSE 0 END) AS WaitListPeople,
+        SUM(CASE WHEN OnWaitList = 0 AND CreatedDateTime >= DATEADD(day, -7, GETDATE()) THEN 1 ELSE 0 END) AS Last7Days
+    FROM Labeled
+), PriorStats AS (
+    SELECT
+        COUNT(*) AS PriorFinalPeople,
+        SUM(CASE WHEN @PriorCutoff IS NOT NULL AND rr.CreatedDateTime <= @PriorCutoff THEN 1 ELSE 0 END) AS PriorSameStagePeople
+    FROM RegistrationRegistrant rr
+    INNER JOIN Registration r ON r.Id = rr.RegistrationId
+    WHERE @PriorRegistrationInstanceId > 0
+      AND r.RegistrationInstanceId = @PriorRegistrationInstanceId
+      AND rr.OnWaitList = 0
+), RawMetrics AS (
+    SELECT 'summary' AS Section, 'confirmed' AS MetricKey, 'Registered people' AS Label,
+        COALESCE(cs.ConfirmedPeople, 0) AS MetricValue, CAST(NULL AS decimal(18,2)) AS SecondaryValue, 1 AS SortOrder
+    FROM CurrentStats cs
+    UNION ALL
+    SELECT 'summary', 'registrations', 'Registrations', COALESCE(cs.ConfirmedRegistrations, 0), NULL, 2 FROM CurrentStats cs
+    UNION ALL
+    SELECT 'summary', 'waitlist', 'Wait list', COALESCE(cs.WaitListPeople, 0), NULL, 3 FROM CurrentStats cs
+    UNION ALL
+    SELECT 'summary', 'last7', 'Added in last 7 days', COALESCE(cs.Last7Days, 0), NULL, 4 FROM CurrentStats cs
+    UNION ALL
+    SELECT 'summary', 'capacity', 'Capacity', COALESCE(@Capacity, 0),
+        CAST(CASE WHEN COALESCE(@Capacity, 0) > 0
+            THEN COALESCE(cs.ConfirmedPeople, 0) * 100.0 / @Capacity ELSE NULL END AS decimal(18,2)), 5
+    FROM CurrentStats cs
+    UNION ALL
+    SELECT 'summary', 'days-remaining', 'Days until close', COALESCE(@DaysRemaining, 0), NULL, 6
+    UNION ALL
+    SELECT 'summary', 'prior-stage', 'Prior event at same lead time', COALESCE(ps.PriorSameStagePeople, 0),
+        CAST(CASE WHEN COALESCE(ps.PriorSameStagePeople, 0) > 0
+            THEN (COALESCE(cs.ConfirmedPeople, 0) - ps.PriorSameStagePeople) * 100.0 / ps.PriorSameStagePeople
+            ELSE NULL END AS decimal(18,2)), 7
+    FROM CurrentStats cs CROSS JOIN PriorStats ps
+    WHERE @PriorRegistrationInstanceId > 0
+    UNION ALL
+    SELECT 'summary', 'prior-final', 'Prior event final people', COALESCE(ps.PriorFinalPeople, 0), NULL, 8
+    FROM PriorStats ps
+    WHERE @PriorRegistrationInstanceId > 0
+
+    UNION ALL
+    SELECT 'segment', SegmentKey, SegmentLabel, COUNT(*), NULL,
+        CASE SegmentKey WHEN 'staff' THEN 1 WHEN 'nonstaff-serving' THEN 2 WHEN 'nonstaff-not-serving' THEN 3 ELSE 4 END
+    FROM Labeled
+    WHERE OnWaitList = 0
+    GROUP BY SegmentKey, SegmentLabel
+
+    UNION ALL
+    SELECT 'campus', LOWER(REPLACE(CampusLabel, ' ', '-')), CampusLabel, COUNT(*), NULL, 0
+    FROM Labeled
+    WHERE OnWaitList = 0
+    GROUP BY CampusLabel
+
+    UNION ALL
+    SELECT 'gender', LOWER(GenderLabel), GenderLabel, COUNT(*), NULL,
+        CASE GenderLabel WHEN 'Female' THEN 1 WHEN 'Male' THEN 2 ELSE 3 END
+    FROM Labeled
+    WHERE OnWaitList = 0
+    GROUP BY GenderLabel
+
+    UNION ALL
+    SELECT 'age', LOWER(REPLACE(AgeBand, ' ', '-')), AgeBand, COUNT(*), NULL,
+        CASE AgeBand WHEN 'Under 18' THEN 1 WHEN '18-24' THEN 2 WHEN '25-34' THEN 3
+            WHEN '35-44' THEN 4 WHEN '45-54' THEN 5 WHEN '55-64' THEN 6 WHEN '65+' THEN 7 ELSE 8 END
+    FROM Labeled
+    WHERE OnWaitList = 0
+    GROUP BY AgeBand
+
+    UNION ALL
+    SELECT 'source', LOWER(REPLACE(SourceLabel, ' ', '-')), SourceLabel, COUNT(*), NULL, 0
+    FROM Labeled
+    WHERE OnWaitList = 0
+    GROUP BY SourceLabel
+), WithSectionMax AS (
+    SELECT *, MAX(MetricValue) OVER (PARTITION BY Section) AS SectionMax
+    FROM RawMetrics
+)
+SELECT
+    Section,
+    MetricKey,
+    Label,
+    MetricValue,
+    SecondaryValue,
+    SortOrder,
+    COALESCE(@InstanceName, 'Registration analytics') AS InstanceName,
+    CAST(CASE WHEN SectionMax > 0 THEN MetricValue * 100.0 / SectionMax ELSE 0 END AS decimal(9,1)) AS BarPercent
+FROM WithSectionMax
+ORDER BY Section, CASE WHEN SortOrder = 0 THEN 999 ELSE SortOrder END, MetricValue DESC, Label;
+{% endsql %}
+
+{% sql return:'weeklyRows' registrationInstanceId:'{{ registrationInstanceId }}' %}
+DECLARE @RegistrationInstanceId int = TRY_CONVERT(int, @registrationInstanceId);
+;WITH Weekly AS (
+    SELECT
+        DATEADD(week, DATEDIFF(week, 0, rr.CreatedDateTime), 0) AS WeekStart,
+        COUNT(*) AS NewRegistrants
+    FROM RegistrationRegistrant rr
+    INNER JOIN Registration r ON r.Id = rr.RegistrationId
+    WHERE r.RegistrationInstanceId = @RegistrationInstanceId
+      AND rr.OnWaitList = 0
+    GROUP BY DATEADD(week, DATEDIFF(week, 0, rr.CreatedDateTime), 0)
+), WithTotals AS (
+    SELECT
+        WeekStart,
+        NewRegistrants,
+        SUM(NewRegistrants) OVER (ORDER BY WeekStart ROWS UNBOUNDED PRECEDING) AS CumulativeRegistrants,
+        MAX(NewRegistrants) OVER () AS MaxWeeklyRegistrants
+    FROM Weekly
+)
+SELECT
+    WeekStart,
+    NewRegistrants,
+    CumulativeRegistrants,
+    CAST(CASE WHEN MaxWeeklyRegistrants > 0
+        THEN 10 + (NewRegistrants * 90.0 / MaxWeeklyRegistrants) ELSE 0 END AS decimal(9,1)) AS BarPercent
+FROM WithTotals
+ORDER BY WeekStart;
+{% endsql %}
+
+{% sql return:'optionRows'
+    registrationInstanceId:'{{ registrationInstanceId }}'
+    feeGroupNameContains:'{{ feeGroupNameContains }}'
+    optionLabelSuffixMarker:'{{ optionLabelSuffixMarker }}' %}
+DECLARE @RegistrationInstanceId int = TRY_CONVERT(int, @registrationInstanceId);
+DECLARE @FeeGroupNameContains nvarchar(100) = LTRIM(RTRIM(COALESCE(@feeGroupNameContains, '')));
+DECLARE @OptionLabelSuffixMarker nvarchar(100) = LTRIM(RTRIM(COALESCE(@optionLabelSuffixMarker, '')));
+;WITH ScopedSelections AS (
+    SELECT
+        rrf.RegistrationTemplateFeeId,
+        rrf.RegistrationTemplateFeeItemId,
+        COUNT(DISTINCT rr.Id) AS SelectionCount
+    FROM RegistrationRegistrantFee rrf
+    INNER JOIN RegistrationRegistrant rr ON rr.Id = rrf.RegistrationRegistrantId
+    INNER JOIN Registration r ON r.Id = rr.RegistrationId
+    WHERE r.RegistrationInstanceId = @RegistrationInstanceId
+      AND rr.OnWaitList = 0
+    GROUP BY rrf.RegistrationTemplateFeeId, rrf.RegistrationTemplateFeeItemId
+), Options AS (
+    SELECT
+        tf.Id AS FeeId,
+        tf.Name AS FeeName,
+        tfi.Id AS FeeItemId,
+        LTRIM(RTRIM(CASE
+            WHEN @OptionLabelSuffixMarker <> '' AND CHARINDEX(@OptionLabelSuffixMarker, tfi.Name) > 0
+                THEN LEFT(tfi.Name, CHARINDEX(@OptionLabelSuffixMarker, tfi.Name) - 1)
+            ELSE tfi.Name END)) AS OptionName,
+        tfi.MaximumUsageCount,
+        COALESCE(ss.SelectionCount, 0) AS SelectionCount,
+        tf.[Order] AS FeeSort,
+        tfi.[Order] AS OptionSort
+    FROM RegistrationInstance ri
+    INNER JOIN RegistrationTemplateFee tf ON tf.RegistrationTemplateId = ri.RegistrationTemplateId
+    INNER JOIN RegistrationTemplateFeeItem tfi ON tfi.RegistrationTemplateFeeId = tf.Id
+    LEFT JOIN ScopedSelections ss
+        ON ss.RegistrationTemplateFeeId = tf.Id
+       AND ss.RegistrationTemplateFeeItemId = tfi.Id
+    WHERE ri.Id = @RegistrationInstanceId
+      AND tfi.IsActive = 1
+      AND (tf.IsActive = 1 OR COALESCE(ss.SelectionCount, 0) > 0)
+      AND (@FeeGroupNameContains = '' OR tf.Name LIKE N'%' + @FeeGroupNameContains + N'%')
+)
+SELECT
+    *,
+    CASE WHEN MaximumUsageCount IS NULL THEN NULL ELSE MaximumUsageCount - SelectionCount END AS RemainingCount,
+    CAST(CASE WHEN MAX(SelectionCount) OVER (PARTITION BY FeeId) > 0
+        THEN SelectionCount * 100.0 / MAX(SelectionCount) OVER (PARTITION BY FeeId)
+        ELSE 0 END AS decimal(9,1)) AS BarPercent
+FROM Options
+ORDER BY FeeSort, OptionSort, OptionName;
+{% endsql %}
+
+{% sql return:'departmentRows'
+    registrationInstanceId:'{{ registrationInstanceId }}'
+    staffGroupId:'{{ staffGroupId }}'
+    servingVerifierGroupId:'{{ servingVerifierGroupId }}'
+    servingRootGroupId:'{{ servingRootGroupId }}'
+    departmentGroupTypeId:'{{ departmentGroupTypeId }}' %}
+DECLARE @RegistrationInstanceId int = TRY_CONVERT(int, @registrationInstanceId);
+DECLARE @StaffGroupId int = TRY_CONVERT(int, @staffGroupId);
+DECLARE @ServingVerifierGroupId int = TRY_CONVERT(int, @servingVerifierGroupId);
+DECLARE @ServingRootGroupId int = TRY_CONVERT(int, @servingRootGroupId);
+DECLARE @DepartmentGroupTypeId int = TRY_CONVERT(int, @departmentGroupTypeId);
+
+;WITH RegisteredPeople AS (
+    SELECT DISTINCT
+        pa.PersonId,
+        CASE WHEN @StaffGroupId > 0 AND EXISTS (
+            SELECT 1 FROM GroupMember staffMember
+            WHERE staffMember.GroupId = @StaffGroupId
+              AND staffMember.PersonId = pa.PersonId
+              AND staffMember.GroupMemberStatus = 1
+              AND staffMember.IsArchived = 0
+        ) THEN 1 ELSE 0 END AS IsStaff
+    FROM RegistrationRegistrant rr
+    INNER JOIN Registration r ON r.Id = rr.RegistrationId
+    INNER JOIN PersonAlias pa ON pa.Id = rr.PersonAliasId
+    WHERE @ServingVerifierGroupId > 0
+      AND @ServingRootGroupId > 0
+      AND @DepartmentGroupTypeId > 0
+      AND r.RegistrationInstanceId = @RegistrationInstanceId
+      AND rr.OnWaitList = 0
+      AND EXISTS (
+          SELECT 1 FROM GroupMember verifier
+          WHERE verifier.GroupId = @ServingVerifierGroupId
+            AND verifier.PersonId = pa.PersonId
+            AND verifier.GroupMemberStatus = 1
+            AND verifier.IsArchived = 0
+      )
+), GroupHierarchy AS (
+    SELECT
+        g.Id,
+        g.ParentGroupId,
+        CAST(CASE WHEN g.GroupTypeId = @DepartmentGroupTypeId THEN g.Name ELSE NULL END AS nvarchar(200)) AS Department
+    FROM [Group] g
+    WHERE g.Id = @ServingRootGroupId
+      AND g.IsActive = 1
+      AND g.IsArchived = 0
+
+    UNION ALL
+
+    SELECT
+        child.Id,
+        child.ParentGroupId,
+        CAST(CASE WHEN child.GroupTypeId = @DepartmentGroupTypeId THEN child.Name ELSE parent.Department END AS nvarchar(200))
+    FROM [Group] child
+    INNER JOIN GroupHierarchy parent ON child.ParentGroupId = parent.Id
+    WHERE child.IsActive = 1
+      AND child.IsArchived = 0
+), PersonDepartmentDistinct AS (
+    SELECT DISTINCT
+        rp.PersonId,
+        rp.IsStaff,
+        COALESCE(NULLIF(gh.Department, ''), 'Unassigned') AS Department
+    FROM RegisteredPeople rp
+    INNER JOIN GroupMember gm
+        ON gm.PersonId = rp.PersonId
+       AND gm.GroupMemberStatus = 1
+       AND gm.IsArchived = 0
+    INNER JOIN GroupHierarchy gh ON gh.Id = gm.GroupId
+    WHERE gm.GroupId <> @ServingRootGroupId
+), WithUnassigned AS (
+    SELECT PersonId, IsStaff, Department FROM PersonDepartmentDistinct
+    UNION ALL
+    SELECT rp.PersonId, rp.IsStaff, 'Verifier only / no active department'
+    FROM RegisteredPeople rp
+    WHERE NOT EXISTS (
+        SELECT 1 FROM PersonDepartmentDistinct pdd WHERE pdd.PersonId = rp.PersonId
+    )
+), DepartmentCounts AS (
+    SELECT
+        Department,
+        COUNT(DISTINCT PersonId) AS ServingPeople,
+        COUNT(DISTINCT CASE WHEN IsStaff = 1 THEN PersonId END) AS StaffPeople,
+        COUNT(DISTINCT CASE WHEN IsStaff = 0 THEN PersonId END) AS NonStaffPeople
+    FROM WithUnassigned
+    GROUP BY Department
+), WithMaximum AS (
+    SELECT *, MAX(ServingPeople) OVER () AS MaxServingPeople
+    FROM DepartmentCounts
+)
+SELECT
+    Department,
+    ServingPeople,
+    StaffPeople,
+    NonStaffPeople,
+    CAST(CASE WHEN MaxServingPeople > 0 THEN ServingPeople * 100.0 / MaxServingPeople ELSE 0 END AS decimal(9,1)) AS BarPercent,
+    CAST(CASE WHEN ServingPeople > 0 THEN StaffPeople * 100.0 / ServingPeople ELSE 0 END AS decimal(9,1)) AS StaffPercent,
+    CAST(CASE WHEN ServingPeople > 0 THEN NonStaffPeople * 100.0 / ServingPeople ELSE 0 END AS decimal(9,1)) AS NonStaffPercent
+FROM WithMaximum
+ORDER BY ServingPeople DESC, Department
+OPTION (MAXRECURSION 100);
+{% endsql %}
+
+{% sql return:'registrantRows'
+    registrationInstanceId:'{{ registrationInstanceId }}'
+    registrantCampusAttributeId:'{{ registrantCampusAttributeId }}'
+    sourceAttributeId:'{{ sourceAttributeId }}'
+    staffGroupId:'{{ staffGroupId }}'
+    servingVerifierGroupId:'{{ servingVerifierGroupId }}'
+    servingRootGroupId:'{{ servingRootGroupId }}'
+    departmentGroupTypeId:'{{ departmentGroupTypeId }}'
+    optionLabelSuffixMarker:'{{ optionLabelSuffixMarker }}'
+    maxRegistrantRows:'{{ maxRegistrantRows }}' %}
+DECLARE @RegistrationInstanceId int = TRY_CONVERT(int, @registrationInstanceId);
+DECLARE @RegistrantCampusAttributeId int = TRY_CONVERT(int, @registrantCampusAttributeId);
+DECLARE @SourceAttributeId int = TRY_CONVERT(int, @sourceAttributeId);
+DECLARE @StaffGroupId int = TRY_CONVERT(int, @staffGroupId);
+DECLARE @ServingVerifierGroupId int = TRY_CONVERT(int, @servingVerifierGroupId);
+DECLARE @ServingRootGroupId int = TRY_CONVERT(int, @servingRootGroupId);
+DECLARE @DepartmentGroupTypeId int = TRY_CONVERT(int, @departmentGroupTypeId);
+DECLARE @OptionLabelSuffixMarker nvarchar(100) = LTRIM(RTRIM(COALESCE(@optionLabelSuffixMarker, '')));
+DECLARE @MaxRegistrantRows int = TRY_CONVERT(int, @maxRegistrantRows);
+SET @MaxRegistrantRows = CASE WHEN @MaxRegistrantRows BETWEEN 1 AND 1000 THEN @MaxRegistrantRows ELSE 500 END;
+
+;WITH GroupHierarchy AS (
+    SELECT
+        g.Id,
+        g.ParentGroupId,
+        CAST(CASE WHEN g.GroupTypeId = @DepartmentGroupTypeId THEN g.Name ELSE NULL END AS nvarchar(200)) AS Department
+    FROM [Group] g
+    WHERE @ServingRootGroupId > 0
+      AND @DepartmentGroupTypeId > 0
+      AND g.Id = @ServingRootGroupId
+      AND g.IsActive = 1
+      AND g.IsArchived = 0
+
+    UNION ALL
+
+    SELECT
+        child.Id,
+        child.ParentGroupId,
+        CAST(CASE WHEN child.GroupTypeId = @DepartmentGroupTypeId THEN child.Name ELSE parent.Department END AS nvarchar(200))
+    FROM [Group] child
+    INNER JOIN GroupHierarchy parent ON child.ParentGroupId = parent.Id
+    WHERE child.IsActive = 1
+      AND child.IsArchived = 0
+), PersonDepartmentDistinct AS (
+    SELECT DISTINCT
+        gm.PersonId,
+        COALESCE(NULLIF(gh.Department, ''), 'Unassigned') AS Department
+    FROM GroupMember gm
+    INNER JOIN GroupHierarchy gh ON gh.Id = gm.GroupId
+    WHERE gm.GroupMemberStatus = 1
+      AND gm.IsArchived = 0
+      AND gm.GroupId <> @ServingRootGroupId
+), PersonDepartments AS (
+    SELECT
+        PersonId,
+        STRING_AGG(CAST(Department AS nvarchar(max)), N', ') WITHIN GROUP (ORDER BY Department) AS Departments
+    FROM PersonDepartmentDistinct
+    GROUP BY PersonId
+), RegistrantOptions AS (
+    SELECT
+        rrf.RegistrationRegistrantId,
+        STRING_AGG(
+            CAST(tf.Name + N': ' + cleanedOption.Name AS nvarchar(max)),
+            N' • '
+        ) WITHIN GROUP (ORDER BY tf.[Order], tfi.[Order]) AS FeeChoices
+    FROM RegistrationRegistrantFee rrf
+    INNER JOIN RegistrationTemplateFee tf ON tf.Id = rrf.RegistrationTemplateFeeId
+    LEFT JOIN RegistrationTemplateFeeItem tfi ON tfi.Id = rrf.RegistrationTemplateFeeItemId
+    OUTER APPLY (
+        SELECT LTRIM(RTRIM(CASE
+            WHEN @OptionLabelSuffixMarker <> '' AND CHARINDEX(@OptionLabelSuffixMarker, sourceName.Name) > 0
+                THEN LEFT(sourceName.Name, CHARINDEX(@OptionLabelSuffixMarker, sourceName.Name) - 1)
+            ELSE sourceName.Name END)) AS Name
+        FROM (VALUES (COALESCE(NULLIF(rrf.[Option], ''), tfi.Name, 'Selected'))) sourceName(Name)
+    ) cleanedOption
+    GROUP BY rrf.RegistrationRegistrantId
+), Base AS (
+    SELECT
+        rr.Id AS RegistrantId,
+        r.Id AS RegistrationId,
+        pa.PersonId,
+        COALESCE(NULLIF(p.NickName, ''), p.FirstName) AS FirstName,
+        p.LastName,
+        rr.OnWaitList,
+        rr.CreatedDateTime,
+        COALESCE(
+            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200), avCampus.PersistedTextValue))), ''),
+            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200), avCampus.Value))), ''),
+            'Unknown'
+        ) AS CampusLabel,
+        COALESCE(
+            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200), avSource.PersistedTextValue))), ''),
+            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(200), avSource.Value))), ''),
+            'Not provided'
+        ) AS SourceLabel,
+        CASE p.Gender WHEN 1 THEN 'Male' WHEN 2 THEN 'Female' ELSE 'Unknown' END AS GenderLabel,
+        CASE
+            WHEN p.BirthYear IS NULL THEN 'Unknown'
+            WHEN YEAR(GETDATE()) - p.BirthYear < 18 THEN 'Under 18'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 18 AND 24 THEN '18-24'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 25 AND 34 THEN '25-34'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 35 AND 44 THEN '35-44'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 45 AND 54 THEN '45-54'
+            WHEN YEAR(GETDATE()) - p.BirthYear BETWEEN 55 AND 64 THEN '55-64'
+            ELSE '65+'
+        END AS AgeBand,
+        CASE WHEN @StaffGroupId > 0 AND EXISTS (
+            SELECT 1 FROM GroupMember gm
+            WHERE gm.GroupId = @StaffGroupId
+              AND gm.PersonId = pa.PersonId
+              AND gm.GroupMemberStatus = 1
+              AND gm.IsArchived = 0
+        ) THEN 1 ELSE 0 END AS IsStaff,
+        CASE WHEN @ServingVerifierGroupId > 0 AND EXISTS (
+            SELECT 1 FROM GroupMember gm
+            WHERE gm.GroupId = @ServingVerifierGroupId
+              AND gm.PersonId = pa.PersonId
+              AND gm.GroupMemberStatus = 1
+              AND gm.IsArchived = 0
+        ) THEN 1 ELSE 0 END AS IsServingVerified,
+        COALESCE(ro.FeeChoices, 'No fee choices recorded') AS FeeChoices,
+        pd.Departments
+    FROM RegistrationRegistrant rr
+    INNER JOIN Registration r ON r.Id = rr.RegistrationId
+    INNER JOIN PersonAlias pa ON pa.Id = rr.PersonAliasId
+    INNER JOIN Person p ON p.Id = pa.PersonId
+    LEFT JOIN AttributeValue avCampus
+        ON @RegistrantCampusAttributeId > 0
+       AND avCampus.AttributeId = @RegistrantCampusAttributeId
+       AND avCampus.EntityId = rr.Id
+    LEFT JOIN AttributeValue avSource
+        ON @SourceAttributeId > 0
+       AND avSource.AttributeId = @SourceAttributeId
+       AND avSource.EntityId = rr.Id
+    LEFT JOIN PersonDepartments pd ON pd.PersonId = pa.PersonId
+    LEFT JOIN RegistrantOptions ro ON ro.RegistrationRegistrantId = rr.Id
+    WHERE r.RegistrationInstanceId = @RegistrationInstanceId
+), Labeled AS (
+    SELECT
+        *,
+        CASE
+            WHEN @StaffGroupId <= 0 AND @ServingVerifierGroupId <= 0 THEN 'unclassified'
+            WHEN IsStaff = 1 THEN 'staff'
+            WHEN IsServingVerified = 1 THEN 'nonstaff-serving'
+            ELSE 'nonstaff-not-serving'
+        END AS SegmentKey,
+        CASE
+            WHEN @StaffGroupId <= 0 AND @ServingVerifierGroupId <= 0 THEN 'Not configured'
+            WHEN IsStaff = 1 THEN 'Staff'
+            WHEN IsServingVerified = 1 THEN 'Non-staff serving'
+            ELSE 'Non-staff not serving'
+        END AS SegmentLabel
+    FROM Base
+)
+SELECT TOP (@MaxRegistrantRows)
+    *,
+    COUNT(*) OVER () AS TotalRegistrantRows,
+    CASE
+        WHEN IsServingVerified = 0 THEN 'Not serving-verified'
+        ELSE COALESCE(Departments, 'Verifier only / no active department')
+    END AS ServingDepartments
+FROM Labeled
+ORDER BY CreatedDateTime DESC, RegistrantId DESC
+OPTION (MAXRECURSION 100);
+{% endsql %}
+
+{% assign summaryRows = metricRows | Where:'Section','summary' %}
+{% assign segmentRows = metricRows | Where:'Section','segment' %}
+{% assign campusRows = metricRows | Where:'Section','campus' %}
+{% assign genderRows = metricRows | Where:'Section','gender' %}
+{% assign ageRows = metricRows | Where:'Section','age' %}
+{% assign sourceRows = metricRows | Where:'Section','source' %}
+{% assign firstMetric = metricRows | First %}
+{% assign firstRegistrant = registrantRows | First %}
+{% assign renderedRegistrantCount = registrantRows | Size %}
+
+<style>
+    .erad { --ink:#202124; --muted:#62666d; --line:#dfe1e5; --panel:#fff; --soft:#f6f7f8; --accent:#3f6fb6; --accent-2:#4b9278; color:var(--ink); }
+    .erad, .erad * { box-sizing:border-box; }
+    .erad-shell { max-width:1400px; margin:0 auto; padding:20px; }
+    .erad-header { padding:24px; border-radius:14px; background:var(--ink); color:#fff; }
+    .erad-header h1 { margin:0; font-size:clamp(24px,4vw,42px); }
+    .erad-header p { margin:8px 0 0; color:#d8dadd; }
+    .erad-section { margin-top:24px; }
+    .erad-section h2 { margin:0 0 12px; font-size:20px; }
+    .erad-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:14px; }
+    .erad-card, .erad-panel { border:1px solid var(--line); border-radius:12px; background:var(--panel); box-shadow:0 4px 14px rgba(32,33,36,.06); }
+    .erad-card { grid-column:span 3; padding:16px; }
+    .erad-card-label { color:var(--muted); font-size:12px; font-weight:600; text-transform:uppercase; }
+    .erad-card-value { margin-top:8px; font-size:30px; font-weight:700; }
+    .erad-card-meta { margin-top:5px; color:var(--muted); font-size:12px; }
+    .erad-panel { grid-column:span 6; padding:18px; min-width:0; }
+    .erad-panel--full { grid-column:1 / -1; }
+    .erad-panel h3 { margin:0 0 5px; font-size:17px; }
+    .erad-intro, .erad-note { margin:0 0 14px; color:var(--muted); font-size:12px; }
+    .erad-bars { display:grid; gap:11px; }
+    .erad-bar-row { display:grid; grid-template-columns:minmax(100px,180px) 1fr auto; gap:10px; align-items:center; }
+    .erad-bar-label { overflow-wrap:anywhere; font-size:12px; }
+    .erad-track { height:10px; overflow:hidden; border-radius:999px; background:var(--soft); }
+    .erad-fill { display:block; height:100%; min-width:2px; border-radius:inherit; background:var(--accent); }
+    .erad-count { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+    .erad-trend { display:flex; gap:10px; min-height:270px; padding:12px 4px 4px; overflow-x:auto; overflow-y:hidden; }
+    .erad-week { display:grid; flex:1 0 58px; grid-template-rows:24px 180px 44px; min-width:58px; text-align:center; }
+    .erad-week-count { font-size:11px; font-weight:700; }
+    .erad-week-bar-wrap { display:flex; height:180px; align-items:flex-end; justify-content:center; }
+    .erad-week-bar { width:30px; min-height:2px; border-radius:6px 6px 0 0; background:var(--accent); }
+    .erad-week-label { align-self:start; color:var(--muted); font-size:10px; line-height:1.2; }
+    .erad-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .erad-option-group { padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--soft); }
+    .erad-option-group h4 { margin:0 0 12px; font-size:14px; }
+    .erad-option { margin-top:12px; }
+    .erad-option:first-of-type { margin-top:0; }
+    .erad-option-label { font-size:12px; line-height:1.3; }
+    .erad-option-meta { margin-top:4px; color:var(--muted); font-size:10px; }
+    .erad-stack { display:flex; height:100%; border-radius:inherit; overflow:hidden; }
+    .erad-stack-staff { background:var(--ink); }
+    .erad-stack-nonstaff { background:var(--accent-2); }
+    .erad-filters { display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:10px; margin-bottom:12px; }
+    .erad-field label { display:block; margin-bottom:4px; color:var(--muted); font-size:11px; font-weight:600; text-transform:uppercase; }
+    .erad-field input, .erad-field select, .erad-reset { width:100%; min-height:38px; border:1px solid var(--line); border-radius:8px; background:#fff; padding:8px 10px; }
+    .erad-reset { align-self:end; width:auto; cursor:pointer; }
+    .erad-result-count { margin:8px 0; color:var(--muted); font-size:12px; }
+    .erad-table-wrap { overflow-x:auto; }
+    .erad-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .erad-table th, .erad-table td { padding:10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    .erad-table th { color:var(--muted); font-size:10px; text-transform:uppercase; }
+    .erad-badge { display:inline-block; border-radius:999px; background:var(--soft); padding:3px 7px; font-size:10px; }
+    .erad-detail-row[hidden], .erad-empty[hidden] { display:none; }
+    .erad-detail { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:0; }
+    .erad-detail div { min-width:0; }
+    .erad-detail dt { color:var(--muted); font-size:10px; font-weight:600; text-transform:uppercase; }
+    .erad-detail dd { margin:3px 0 0; overflow-wrap:anywhere; }
+    .erad-empty { padding:18px; text-align:center; color:var(--muted); }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media (max-width:1000px) { .erad-card{grid-column:span 6}.erad-panel{grid-column:1/-1}.erad-options{grid-template-columns:1fr}.erad-filters{grid-template-columns:1fr 1fr}.erad-detail{grid-template-columns:1fr} }
+    @media (max-width:620px) { .erad-shell{padding:10px}.erad-card{grid-column:1/-1}.erad-filters{grid-template-columns:1fr}.erad-bar-row{grid-template-columns:minmax(90px,1fr) 1fr auto}.erad-header{padding:18px} }
+</style>
+
+<div class="erad" id="erad-app">
+    <div class="erad-shell">
+        <header class="erad-header">
+            <h1>{{ firstMetric.InstanceName | Escape }}</h1>
+            <p>Registration capacity, pace, selections, demographics, and secured operational drilldown</p>
+        </header>
+
+        <section class="erad-section" aria-labelledby="erad-summary-heading">
+            <h2 id="erad-summary-heading">Registration overview</h2>
+            <div class="erad-grid">
+                {% for row in summaryRows %}
+                <article class="erad-card">
+                    <div class="erad-card-label">{{ row.Label | Escape }}</div>
+                    <div class="erad-card-value">{{ row.MetricValue | Format:'#,##0' }}</div>
+                    {% if row.SecondaryValue != null %}
+                    <div class="erad-card-meta">{{ row.SecondaryValue | Format:'0.0' }}{% if row.MetricKey == 'capacity' %}% filled{% else %}% versus prior stage{% endif %}</div>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="erad-section erad-grid" aria-label="Registration pace and segments">
+            <article class="erad-panel">
+                <h3>Weekly registration pace</h3>
+                <p class="erad-intro">Confirmed people added each week; labels show cumulative people.</p>
+                <div class="erad-trend" role="img" aria-label="Weekly confirmed registrants and cumulative totals">
+                    {% for row in weeklyRows %}
+                    <div class="erad-week">
+                        <div class="erad-week-count">{{ row.NewRegistrants }}</div>
+                        <div class="erad-week-bar-wrap"><span class="erad-week-bar" style="height:{{ row.BarPercent }}%;"></span></div>
+                        <div class="erad-week-label">{{ row.WeekStart | Date:'MMM d' }}<br>{{ row.CumulativeRegistrants }} total</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+            <article class="erad-panel">
+                <h3>People segments</h3>
+                <p class="erad-intro">Mutually exclusive precedence: staff, serving verified, then neither.</p>
+                <div class="erad-bars" role="list">
+                    {% for row in segmentRows %}
+                    <div class="erad-bar-row" role="listitem">
+                        <div class="erad-bar-label">{{ row.Label | Escape }}</div>
+                        <div class="erad-track"><span class="erad-fill" style="width:{{ row.BarPercent }}%;"></span></div>
+                        <div class="erad-count">{{ row.MetricValue }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+        </section>
+
+        {% if departmentRows != empty %}
+        <section class="erad-section">
+            <article class="erad-panel erad-panel--full">
+                <h3>Serving departments</h3>
+                <p class="erad-intro">Only serving-verifier holders are included. A person may appear in more than one department.</p>
+                <div class="erad-bars" role="list">
+                    {% for row in departmentRows %}
+                    <div class="erad-bar-row" role="listitem">
+                        <div class="erad-bar-label">{{ row.Department | Escape }}</div>
+                        <div class="erad-track">
+                            <span class="erad-stack" style="width:{{ row.BarPercent }}%;">
+                                <span class="erad-stack-staff" style="width:{{ row.StaffPercent }}%;"></span>
+                                <span class="erad-stack-nonstaff" style="width:{{ row.NonStaffPercent }}%;"></span>
+                            </span>
+                        </div>
+                        <div class="erad-count">{{ row.ServingPeople }} total · {{ row.StaffPeople }} staff</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+        </section>
+        {% endif %}
+
+        {% if optionRows != empty %}
+        <section class="erad-section">
+            <article class="erad-panel erad-panel--full">
+                <h3>Fee choices and registration options</h3>
+                <p class="erad-intro">Confirm locally that these fee groups represent participant choices before interpreting them as breakouts.</p>
+                <div class="erad-options">
+                    {% assign lastFeeId = 0 %}
+                    {% for row in optionRows %}
+                        {% if row.FeeId != lastFeeId %}
+                            {% if lastFeeId != 0 %}</section>{% endif %}
+                            <section class="erad-option-group">
+                                <h4>{{ row.FeeName | Escape }}</h4>
+                        {% endif %}
+                        <div class="erad-option">
+                            <div class="erad-option-label">{{ row.OptionName | Escape }}</div>
+                            <div class="erad-track"><span class="erad-fill" style="width:{{ row.BarPercent }}%;"></span></div>
+                            <div class="erad-option-meta">{{ row.SelectionCount }} selected{% if row.MaximumUsageCount != null %} · {{ row.RemainingCount }} of {{ row.MaximumUsageCount }} remaining{% endif %}</div>
+                        </div>
+                        {% assign lastFeeId = row.FeeId %}
+                    {% endfor %}
+                    {% if lastFeeId != 0 %}</section>{% endif %}
+                </div>
+            </article>
+        </section>
+        {% endif %}
+
+        <section class="erad-section erad-grid" aria-label="Demographics and registration context">
+            {% assign distributionSets = 'campus,gender,age,source' | Split:',' %}
+            {% for distribution in distributionSets %}
+                {% case distribution %}
+                    {% when 'campus' %}{% assign distributionRows = campusRows %}{% assign distributionTitle = 'Campus' %}
+                    {% when 'gender' %}{% assign distributionRows = genderRows %}{% assign distributionTitle = 'Gender' %}
+                    {% when 'age' %}{% assign distributionRows = ageRows %}{% assign distributionTitle = 'Age bands' %}
+                    {% when 'source' %}{% assign distributionRows = sourceRows %}{% assign distributionTitle = 'Discovery source' %}
+                {% endcase %}
+                <article class="erad-panel">
+                    <h3>{{ distributionTitle }}</h3>
+                    <div class="erad-bars" role="list">
+                        {% for row in distributionRows %}
+                        <div class="erad-bar-row" role="listitem">
+                            <div class="erad-bar-label">{{ row.Label | Escape }}</div>
+                            <div class="erad-track"><span class="erad-fill" style="width:{{ row.BarPercent }}%;"></span></div>
+                            <div class="erad-count">{{ row.MetricValue }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </article>
+            {% endfor %}
+        </section>
+
+        <section class="erad-section" aria-labelledby="erad-drilldown-heading">
+            <article class="erad-panel erad-panel--full">
+                <h2 id="erad-drilldown-heading">Registrant drilldown</h2>
+                <p class="erad-note">Contact details and free-text registration answers are intentionally omitted.</p>
+                <div class="erad-filters">
+                    <div class="erad-field"><label for="erad-search">Search</label><input id="erad-search" type="search" placeholder="Name, option, department, source"></div>
+                    <div class="erad-field"><label for="erad-campus">Campus</label><select id="erad-campus"><option value="">All campuses</option>{% for row in campusRows %}<option value="{{ row.Label | Escape }}">{{ row.Label | Escape }}</option>{% endfor %}</select></div>
+                    <div class="erad-field"><label for="erad-segment">Segment</label><select id="erad-segment"><option value="">All segments</option>{% for row in segmentRows %}<option value="{{ row.MetricKey | Escape }}">{{ row.Label | Escape }}</option>{% endfor %}</select></div>
+                    <button class="erad-reset" id="erad-reset" type="button">Reset</button>
+                </div>
+                <div class="erad-result-count" id="erad-result-count" aria-live="polite">Showing {{ renderedRegistrantCount }} people{% if firstRegistrant.TotalRegistrantRows > renderedRegistrantCount %} of {{ firstRegistrant.TotalRegistrantRows }} returned by the instance{% endif %}</div>
+                <div class="erad-table-wrap">
+                    <table class="erad-table">
+                        <caption class="sr-only">Registration participant drilldown</caption>
+                        <thead><tr><th scope="col">Person</th><th scope="col">Segment</th><th scope="col">Campus</th><th scope="col">Demographic</th><th scope="col">Registered</th><th scope="col">Details</th></tr></thead>
+                        <tbody id="erad-body">
+                            {% for row in registrantRows %}
+                            {% capture searchText %}{{ row.FirstName }} {{ row.LastName }} {{ row.CampusLabel }} {{ row.SegmentLabel }} {{ row.ServingDepartments }} {{ row.FeeChoices }} {{ row.SourceLabel }}{% endcapture %}
+                            <tr class="erad-person-row" data-row-id="{{ row.RegistrantId }}" data-search="{{ searchText | Downcase | StripNewlines | Escape }}" data-campus="{{ row.CampusLabel | Escape }}" data-segment="{{ row.SegmentKey | Escape }}">
+                                <td><a href="/Person/{{ row.PersonId }}">{{ row.FirstName | Escape }} {{ row.LastName | Escape }}</a>{% if row.OnWaitList == true or row.OnWaitList == 1 %}<br><span class="erad-badge">Wait list</span>{% endif %}</td>
+                                <td><span class="erad-badge">{{ row.SegmentLabel | Escape }}</span></td>
+                                <td>{{ row.CampusLabel | Escape }}</td>
+                                <td>{{ row.AgeBand | Escape }} · {{ row.GenderLabel | Escape }}</td>
+                                <td>{{ row.CreatedDateTime | Date:'MMM d, yyyy' }}</td>
+                                <td><button type="button" class="erad-toggle" aria-expanded="false" aria-controls="erad-detail-{{ row.RegistrantId }}">View</button></td>
+                            </tr>
+                            <tr class="erad-detail-row" id="erad-detail-{{ row.RegistrantId }}" data-detail-for="{{ row.RegistrantId }}" hidden>
+                                <td colspan="6">
+                                    <dl class="erad-detail">
+                                        <div><dt>Fee choices</dt><dd>{{ row.FeeChoices | Escape }}</dd></div>
+                                        <div><dt>Serving departments</dt><dd>{{ row.ServingDepartments | Escape }}</dd></div>
+                                        <div><dt>Discovery source</dt><dd>{{ row.SourceLabel | Escape }}</dd></div>
+                                        <div><dt>Registration record</dt><dd>{{ row.RegistrationId }}</dd></div>
+                                    </dl>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <div class="erad-empty" id="erad-empty" hidden>No people match these filters.</div>
+                </div>
+            </article>
+        </section>
+    </div>
+</div>
+
+<script>
+(function () {
+    const root = document.getElementById('erad-app');
+    if (!root || root.dataset.initialized === '1') return;
+    root.dataset.initialized = '1';
+
+    const search = root.querySelector('#erad-search');
+    const campus = root.querySelector('#erad-campus');
+    const segment = root.querySelector('#erad-segment');
+    const reset = root.querySelector('#erad-reset');
+    const resultCount = root.querySelector('#erad-result-count');
+    const empty = root.querySelector('#erad-empty');
+    const rows = Array.from(root.querySelectorAll('.erad-person-row'));
+
+    function closeDetail(row) {
+        const detail = root.querySelector('[data-detail-for="' + row.dataset.rowId + '"]');
+        const button = row.querySelector('.erad-toggle');
+        if (detail) detail.hidden = true;
+        if (button) {
+            button.setAttribute('aria-expanded', 'false');
+            button.textContent = 'View';
+        }
+    }
+
+    function applyFilters() {
+        const query = search.value.trim().toLowerCase();
+        let visible = 0;
+        rows.forEach(function (row) {
+            const show = (!query || row.dataset.search.includes(query))
+                && (!campus.value || row.dataset.campus === campus.value)
+                && (!segment.value || row.dataset.segment === segment.value);
+            row.hidden = !show;
+            if (!show) closeDetail(row);
+            if (show) visible += 1;
+        });
+        resultCount.textContent = 'Showing ' + visible + ' people';
+        empty.hidden = visible !== 0;
+    }
+
+    root.addEventListener('click', function (event) {
+        const button = event.target.closest('.erad-toggle');
+        if (!button) return;
+        const row = button.closest('.erad-person-row');
+        const detail = root.querySelector('[data-detail-for="' + row.dataset.rowId + '"]');
+        if (!detail) return;
+        const willOpen = detail.hidden;
+        detail.hidden = !willOpen;
+        button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        button.textContent = willOpen ? 'Hide' : 'View';
+    });
+
+    [search, campus, segment].forEach(function (control) {
+        control.addEventListener(control === search ? 'input' : 'change', applyFilters);
+    });
+    reset.addEventListener('click', function () {
+        search.value = '';
+        campus.value = '';
+        segment.value = '';
+        rows.forEach(closeDetail);
+        applyFilters();
+        search.focus();
+    });
+}());
+</script>
+
+{% endif %}
